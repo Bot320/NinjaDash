@@ -8,12 +8,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ---------- Tokens: dark is the default for a wall display ---------- */
+/* ---------- Tokens: dark (evening) is the default; light during office hours ---------- */
 :root {
   color-scheme: dark;
   --page: #0b0c0e;
   --card: #16181c;
   --card-raised: #1d2025;
+  --card-ok: #1a1d21;
   --border: rgba(255,255,255,0.06);
   --text-1: #f0efec;
   --text-2: #b9bcc3;
@@ -22,17 +23,15 @@
   --axis: #34373e;
   --accent: #3987e5;
   --accent-track: #1c2a3d;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
-  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
-  --delta-bad: #ee7b7b; --delta-good: #3ec43e;
-  --spark-muted: #3a3e46;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --offline: #7d818a;
   --shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
 }
 :root[data-theme="light"] {
   color-scheme: light;
   --page: #f3f3f0;
   --card: #ffffff;
-  --card-raised: #f7f7f5;
+  --card-raised: #f6f6f3;
+  --card-ok: #f8f8f6;
   --border: rgba(11,11,11,0.08);
   --text-1: #0b0b0b;
   --text-2: #52514e;
@@ -41,9 +40,7 @@
   --axis: #c3c2b7;
   --accent: #2a78d6;
   --accent-track: #dde9f8;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
-  --delta-bad: #c03030; --delta-good: #006300;
-  --spark-muted: #d3d2cc;
+  --offline: #898781;
   --shadow: 0 1px 2px rgba(11,11,11,0.04);
 }
 
@@ -61,7 +58,7 @@ body {
   width: 1920px; height: 1080px; padding: 28px;
   display: grid; gap: 20px;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: 48px 168px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 48px 168px 440px minmax(0, 1fr);
 }
 .card {
   background: var(--card);
@@ -74,16 +71,12 @@ body {
 }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
 .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
-.card-sub { font-size: 13px; color: var(--text-3); margin-top: 3px; }
+.card-sub { font-size: 13px; color: var(--text-3); }
 
 /* ---------- Header ---------- */
 header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 14px; }
-.logo {
-  width: 40px; height: 40px; border-radius: 12px;
-  background: linear-gradient(140deg, #3987e5 0%, #6250d6 100%);
-  display: grid; place-items: center;
-}
+.logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(140deg, #3987e5 0%, #6250d6 100%); display: grid; place-items: center; }
 .brand h1 { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
 .brand p { font-size: 13px; color: var(--text-3); margin-top: 2px; }
 .header-right { display: flex; align-items: center; gap: 28px; }
@@ -94,84 +87,87 @@ header { grid-column: 1 / -1; display: flex; align-items: center; justify-conten
 .clock .time { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
 .clock .date { font-size: 13px; color: var(--text-3); margin-top: 4px; }
 
-/* ---------- KPI tiles ---------- */
-.tile { grid-column: span 2; justify-content: space-between; }
-.tile .label { font-size: 13px; color: var(--text-2); font-weight: 500; }
-.tile .value { font-size: 40px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; }
-.tile .value small { font-size: 18px; font-weight: 500; color: var(--text-3); letter-spacing: 0; margin-left: 4px; }
-.tile .foot { font-size: 13px; color: var(--text-3); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tile.hero .value { font-size: 56px; }
-.hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
-.delta-bad { color: var(--delta-bad); font-weight: 500; }
-.delta-good { color: var(--delta-good); font-weight: 500; }
-.sev-inline { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
-.sev-inline i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-.meter { height: 6px; border-radius: 999px; background: var(--accent-track); overflow: hidden; }
-.meter > div { height: 100%; border-radius: 999px; background: var(--accent); }
+/* ---------- Pillar tiles (hardware / backup / antivirus) ---------- */
+.pillar { grid-column: span 3; justify-content: space-between; position: relative; overflow: hidden; }
+.pillar::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--state); }
+.pillar .top { display: flex; align-items: center; justify-content: space-between; }
+.pillar .label { font-size: 14px; color: var(--text-2); font-weight: 550; display: flex; align-items: center; gap: 9px; }
+.pillar .label svg { color: var(--text-2); }
+.pillar .mid { display: flex; align-items: baseline; gap: 12px; }
+.pillar .value { font-size: 48px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; }
+.pillar .unit { font-size: 15px; color: var(--text-3); }
+.split { display: flex; gap: 8px; font-size: 13px; }
+.split span { padding: 5px 10px; border-radius: 8px; background: var(--card-raised); color: var(--text-2); }
+.split b { color: var(--text-1); font-weight: 650; }
+.split .srv { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state) 45%, transparent); }
+.note { font-size: 12.5px; color: var(--text-3); margin-left: auto; align-self: center; }
 
-/* ---------- Main panels ---------- */
-.alerts-chart { grid-column: span 6; }
-.inventory { grid-column: span 3; }
-.feed { grid-column: span 3; grid-row: span 2; }
-.patches { grid-column: span 4; }
-.attention { grid-column: span 5; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip.critical { background: color-mix(in srgb, var(--critical) 16%, transparent); color: var(--text-1); }
+.chip.warning  { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--text-1); }
+.chip.ok       { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--text-1); }
+.chip.offline  { background: var(--card-raised); color: var(--text-1); }
+.chip .ic { display: inline-flex; }
+.chip.critical .ic { color: var(--critical); } .chip.warning .ic { color: var(--warning); }
+.chip.ok .ic { color: var(--good); } .chip.offline .ic { color: var(--offline); }
+:root[data-theme="light"] .chip.warning .ic { color: #b07a00; }
 
-.legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-2); }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+/* Online tile */
+.online { grid-column: span 3; justify-content: space-between; }
+.online .label { font-size: 14px; color: var(--text-2); font-weight: 550; }
+.orow { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: baseline; }
+.orow .k { font-size: 13px; color: var(--text-2); }
+.orow .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.orow .v small { font-size: 13px; color: var(--text-3); font-weight: 500; margin-left: 2px; letter-spacing: 0; }
+.orow .meter { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: var(--accent-track); overflow: hidden; }
+.orow .meter > div { height: 100%; border-radius: 999px; background: var(--accent); }
 
-svg text { font-family: inherit; }
-.tick { fill: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* ---------- Server wall ---------- */
+.servers { grid-column: span 7; grid-row: span 2; }
+.affected { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.srv-card { position: relative; border-radius: 12px; background: var(--card-raised); padding: 14px 16px 14px 20px; min-height: 96px; overflow: hidden; }
+.srv-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--state); }
+.srv-card .hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.srv-card .nm { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.srv-card .org { font-size: 12.5px; color: var(--text-3); margin-left: 8px; font-weight: 500; }
+.issue { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; font-size: 13.5px; margin-top: 8px; color: var(--text-1); }
+.issue svg { color: var(--text-2); }
+.issue .since { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.section-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-3); margin: 18px 0 10px; }
+.section-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.section-label i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; }
+.healthy { flex: 1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 8px; }
+.ok-tile { display: flex; flex-direction: column; justify-content: center; }
+.ok-tile { border-radius: 10px; background: var(--card-ok); border: 1px solid var(--border); padding: 7px 10px; min-width: 0; }
+.ok-tile .n { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ok-tile .n i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); flex: none; }
+.ok-tile .o { font-size: 11px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 12px; }
 
-/* Inventory */
-.segbar { display: flex; gap: 2px; height: 28px; margin: 4px 0 18px; }
-.segbar > div { border-radius: 4px; display: flex; align-items: center; padding-left: 8px;
-  font-size: 12px; font-weight: 600; color: #fff; min-width: 0; }
-.inv-row { display: grid; grid-template-columns: 10px 1fr auto 80px; align-items: center; gap: 12px;
-  padding: 11px 0; border-top: 1px solid var(--border); font-size: 14px; }
-.inv-row.first { border-top: 0; }
-.inv-foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-3);
-  padding: 10px 12px; border-radius: 10px; background: var(--card-raised); }
-.inv-foot b { color: var(--text-1); font-weight: 600; }
-.inv-row i { width: 10px; height: 10px; border-radius: 3px; }
-.inv-row .n { font-weight: 600; font-variant-numeric: tabular-nums; }
-.inv-row .on { font-size: 12px; color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
-
-/* Feed */
-.feed-list { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
-.feed-item { display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; align-items: center;
-  padding: 12px; border-radius: 12px; background: var(--card-raised); }
-.feed-item .t { font-size: 14px; font-weight: 550; line-height: 1.25; }
-.feed-item .m { font-size: 12.5px; color: var(--text-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-item .ago { font-size: 12px; color: var(--text-3); align-self: start; padding-top: 2px; white-space: nowrap; }
+/* ---------- Workstations ---------- */
+.clients { grid-column: span 5; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.item { display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--card-raised); }
+.item .t { font-size: 14px; font-weight: 550; line-height: 1.25; }
+.item .m { font-size: 12.5px; color: var(--text-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .ago { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 .sev { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
 .sev.critical { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
-.sev.major    { background: color-mix(in srgb, var(--serious) 18%, transparent); color: var(--serious); }
-.sev.minor    { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
-:root[data-theme="light"] .sev.minor { color: #b07a00; }
+.sev.warning  { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.sev.minor    { background: var(--card); color: var(--text-2); }
+:root[data-theme="light"] .sev.warning { color: #b07a00; }
 .sevword { font-weight: 600; color: var(--text-2); }
 
-/* Patch bars */
-.pbars { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
-.pbar { display: grid; grid-template-columns: 150px 1fr 54px; align-items: center; gap: 14px; padding: 9px 0; font-size: 14px; }
-.pbar .name { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
-.pbar .track { height: 10px; border-radius: 999px; background: var(--accent-track); position: relative; }
-.pbar .fill { height: 100%; border-radius: 999px; background: var(--accent); }
-.pbar .fill.warn { background: var(--warning); }
-.pbar .pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-.threshold { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-3); opacity: .55; border-radius: 1px; }
-
-/* Attention table */
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th { text-align: left; font-size: 12px; font-weight: 500; color: var(--text-3); padding: 0 0 8px; }
-td { padding: 6px 0; border-top: 1px solid var(--border); vertical-align: middle; }
-td.dev b { font-weight: 600; }
-td.dev span { display: block; font-size: 12px; color: var(--text-3); margin-top: 1px; }
-td.since, th.since { text-align: right; }
-td.since { color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 9px; border-radius: 999px;
-  font-size: 12.5px; font-weight: 550; background: var(--card-raised); color: var(--text-1); white-space: nowrap; }
-.pill i { width: 8px; height: 8px; border-radius: 50%; }
+/* ---------- 14-day trend: small multiples ---------- */
+.trend { grid-column: span 5; }
+.trend .rows { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.trow { display: grid; grid-template-columns: 120px 1fr 64px; gap: 16px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.trow.first { border-top: 0; }
+.trow .k { font-size: 14px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.trow .tot { text-align: right; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+.trow .tot small { display: block; font-size: 11.5px; color: var(--text-3); font-weight: 500; letter-spacing: 0; }
+.tick { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg text { font-family: inherit; }
 </style>
 </head>
 <body>
@@ -180,247 +176,180 @@ td.since { color: var(--text-2); font-variant-numeric: tabular-nums; white-space
 <script>
 /* Sample data shaped like the planned backend /api/summary response. All names are made up. */
 const DATA = {
-  syncedSecondsAgo: 18,
-  orgs: 6,
-  devices: { total: 438, online: 401, stale: 5, onlineTrend: [389,392,395,391,388,397,399,394,396,400,398,397,402,401] },
-  alerts: { active: 23, critical: 4, major: 7, minor: 12, deltaVsYesterday: 5,
-    // alerts triggered per hour, oldest first (15:00 yesterday -> 14:00 today)
-    hourly: {
-      critical: [0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,2,0,0],
-      major:    [1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,1,2,1,0,2,1,1,0],
-      minor:    [2,1,1,2,0,1,0,0,1,0,0,0,1,0,2,3,4,5,3,2,3,4,2,1]
-    }
+  syncedSecondsAgo: 18, orgs: 6,
+  online: { servers: [45, 46], workstations: [356, 392] },
+  pillars: {
+    hardware:  { state: "critical", servers: 3, workstations: 3, note: "RAID · SMART · PSU" },
+    backup:    { state: "critical", servers: 2, workstations: 1, note: "131 of 134 jobs OK · 24 h" },
+    antivirus: { state: "critical", servers: 1, workstations: 2, note: "1 active · 1 quarantined" }
   },
-  patches: { compliance: 93.9, pending: 128, failed: 9 },
-  backups: { successRate: 97.8, ok: 134, total: 137, delta: 0.6 },
-  reboots: { pending: 17, overdue: 6 },
-  antivirus: { protected: 431, total: 438, threats: 2 },
-  inventory: [
-    { name: "Windows workstations", total: 318, online: 291, c: "--s1", ink: "#fff" },
-    { name: "macOS",                total: 52,  online: 44,  c: "--s2", ink: "#fff" },
-    { name: "Windows servers",      total: 46,  online: 45,  c: "--s3", ink: "#fff" },
-    { name: "Linux servers",        total: 14,  online: 14,  c: "--s4", ink: "#0b0b0b" },
-    { name: "Network devices",      total: 8,   online: 7,   c: "--s5", ink: "#fff" }
+  // Servers with at least one problem; the backend sorts by worst severity, then age.
+  affectedServers: [
+    { n: "SRV-FS01",  o: "Acme Logistics",   state: "critical", issues: [
+        { c: "hardware", t: "RAID 5 degraded · disk 2 failed", since: "3 h" } ] },
+    { n: "SRV-RDS02", o: "Riverside Clinic", state: "critical", issues: [
+        { c: "antivirus", t: "Active threat: Trojan.Win64.Agent", since: "22 min" } ] },
+    { n: "SRV-SQL01", o: "Acme Logistics",   state: "critical", issues: [
+        { c: "backup",   t: "Backup failed 2× · last good 38 h ago", since: "14 h" },
+        { c: "hardware", t: "SMART: reallocated sectors rising", since: "2 d" } ] },
+    { n: "SRV-PRINT", o: "Internal IT",      state: "offline", issues: [
+        { c: "offline",  t: "Not responding since 13:45", since: "47 min" } ] },
+    { n: "HV-HOST02", o: "Riverside Clinic", state: "warning", issues: [
+        { c: "hardware", t: "PSU 2 failed · redundancy lost", since: "6 h" } ] },
+    { n: "SRV-APP03", o: "Riverside Clinic", state: "warning", issues: [
+        { c: "backup",   t: "No successful backup for 3 days", since: "3 d" } ] }
   ],
-  feed: [
-    { sev: "critical", t: "Device offline",                 d: "SRV-FS01",     o: "Acme Logistics",   ago: "3 min" },
-    { sev: "major",    t: "Disk C: above 90 %",             d: "DC-02",        o: "Northwind Dental", ago: "12 min" },
-    { sev: "minor",    t: "Windows update failed",          d: "WS-114",       o: "Riverside Clinic", ago: "26 min" },
-    { sev: "critical", t: "Backup job failed",              d: "SRV-SQL01",    o: "Acme Logistics",   ago: "41 min" },
-    { sev: "major",    t: "CPU above 95 % for 15 min",      d: "SRV-APP03",    o: "Riverside Clinic", ago: "1 h" },
-    { sev: "major",    t: "Threat quarantined",             d: "WS-RECEPTION", o: "Harbor Café",      ago: "2 h" },
-    { sev: "minor",    t: "Antivirus definitions outdated", d: "LT-SALES-07",  o: "Acme Logistics",   ago: "2 h" },
-    { sev: "minor",    t: "Service stopped: Print Spooler", d: "WS-022",       o: "Brightline Legal", ago: "3 h" },
-    { sev: "minor",    t: "Reboot pending for 7+ days",     d: "SRV-PRINT",    o: "Internal IT",      ago: "4 h" },
-    { sev: "major",    t: "Memory above 90 %",              d: "SRV-RDS02",    o: "Riverside Clinic", ago: "5 h" }
+  healthyServers: {
+    "Acme Logistics":   ["SRV-DC01","SRV-DC02","SRV-APP01","SRV-APP02","SRV-ERP01","SRV-WEB01","SRV-VEEAM","HV-ACME01","HV-ACME02","SRV-RDS01"],
+    "Riverside Clinic": ["SRV-DC01","SRV-DC02","SRV-PACS01","SRV-PACS02","SRV-APP01","SRV-APP02","SRV-RDS01","SRV-SQL02","HV-HOST01","HV-HOST03","SRV-FS02"],
+    "Northwind Dental": ["DC-01","DC-02","SRV-XRAY","SRV-FS01","SRV-APP01","NAS-01"],
+    "Brightline Legal": ["SRV-DC01","SRV-DMS01","SRV-FS01","SRV-SQL01","SRV-RDS01"],
+    "Internal IT":      ["SRV-DC01","SRV-RMM","SRV-MON01","SRV-FS01","SRV-BKP01","PVE-01"],
+    "Harbor Café":      ["SRV-POS01","NAS-01"]
+  },
+  workstations: [
+    { sev: "critical", c: "hardware",  t: "SMART: drive failure predicted",   d: "WS-114",       o: "Riverside Clinic", ago: "2 h" },
+    { sev: "critical", c: "antivirus", t: "Antivirus disabled",               d: "LT-SALES-07",  o: "Acme Logistics",   ago: "1 d" },
+    { sev: "warning",  c: "antivirus", t: "Threat quarantined: PUA.Bundler",  d: "WS-RECEPTION", o: "Harbor Café",      ago: "3 h" },
+    { sev: "warning",  c: "hardware",  t: "Memory errors logged (WHEA)",      d: "WS-022",       o: "Brightline Legal", ago: "5 h" },
+    { sev: "warning",  c: "backup",    t: "Backup failed",                    d: "WS-PRAXIS-03", o: "Northwind Dental", ago: "14 h" },
+    { sev: "minor",    c: "hardware",  t: "Battery health 41 %",              d: "LT-JLEE",      o: "Brightline Legal", ago: "6 d" }
   ],
-  patchByOrg: [
-    { o: "Internal IT",      pct: 99.2 },
-    { o: "Acme Logistics",   pct: 97.1 },
-    { o: "Northwind Dental", pct: 95.4 },
-    { o: "Brightline Legal", pct: 92.8 },
-    { o: "Riverside Clinic", pct: 89.7 },
-    { o: "Harbor Café",      pct: 86.5 }
-  ],
-  attention: [
-    { d: "SRV-FS01",    o: "Acme Logistics",   issue: "Offline",             sev: "critical", since: "47 min" },
-    { d: "SRV-SQL01",   o: "Acme Logistics",   issue: "Backup failed (2×)",  sev: "critical", since: "14 h" },
-    { d: "DC-02",       o: "Northwind Dental", issue: "Disk 94 % full",      sev: "serious",  since: "2 d" },
-    { d: "SRV-PRINT",   o: "Internal IT",      issue: "Reboot pending",      sev: "warning",  since: "12 d" },
-    { d: "LT-SALES-07", o: "Acme Logistics",   issue: "Offline",             sev: "warning",  since: "9 d" },
-    { d: "MBP-JLEE",    o: "Brightline Legal", issue: "Disk encryption off", sev: "warning",  since: "3 d" }
-  ]
+  // incidents opened per day, oldest first (14 days)
+  trend: {
+    hardware:  [1,0,2,1,0,0,1,3,1,0,2,1,2,3],
+    backup:    [0,1,0,0,2,0,0,1,0,0,1,0,2,1],
+    antivirus: [0,0,1,0,0,0,0,0,1,0,0,0,1,2]
+  }
 };
 
 const theme = new URLSearchParams(location.search).get("theme");
 if (theme) document.documentElement.dataset.theme = theme;
 
-const fmt = n => n.toLocaleString("en-US");
-
-const ICON = {
-  critical: '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><rect x="7" y="3.6" width="2" height="5.6" rx="1" fill="#fff"/><circle cx="8" cy="11.6" r="1.1" fill="#fff"/></svg>',
-  major:    '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.8 14.6 13.6H1.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="7.1" y="5.6" width="1.8" height="4.4" rx=".9" fill="#fff"/><circle cx="8" cy="11.8" r=".95" fill="#fff"/></svg>',
-  minor:    '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>'
+const svg = (p, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const CAT = {
+  hardware:  svg('<rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M2 9h12"/><circle cx="11.3" cy="11" r=".6" fill="currentColor"/>'),
+  backup:    svg('<path d="M13.2 8.4A5.2 5.2 0 1 1 11.7 4.3"/><path d="M12.4 1.8v2.9H9.5"/><path d="M8 5.5V8l1.7 1.2"/>'),
+  antivirus: svg('<path d="M8 1.8 13.2 3.7v3.9c0 3-2.2 5.3-5.2 6.6-3-1.3-5.2-3.6-5.2-6.6V3.7z"/><path d="M5.8 8l1.5 1.5 2.9-3"/>'),
+  offline:   svg('<path d="M8 1.8v5.4"/><path d="M4.4 4.3a5.2 5.2 0 1 0 7.2 0"/>')
 };
-const SEVWORD = { critical: "Critical", major: "Major", minor: "Minor" };
+const CATNAME = { hardware: "Hardware", backup: "Backup", antivirus: "Antivirus" };
+const SEV = {
+  critical: '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><rect x="7" y="3.6" width="2" height="5.6" rx="1" fill="#fff"/><circle cx="8" cy="11.6" r="1.1" fill="#fff"/></svg>',
+  warning:  '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.8 14.6 13.6H1.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="7.1" y="5.6" width="1.8" height="4.4" rx=".9" fill="#fff"/><circle cx="8" cy="11.8" r=".95" fill="#fff"/></svg>',
+  ok:       '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  offline:  '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 8h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+};
+const WORD = { critical: "Critical", warning: "Warning", ok: "All clear", offline: "Offline", minor: "Minor" };
+const STATEVAR = { critical: "var(--critical)", warning: "var(--warning)", ok: "var(--good)", offline: "var(--offline)" };
+const plural = (n, w) => n === 1 ? w : w + "s";
+const chip = s => `<span class="chip ${s}"><span class="ic">${SEV[s]}</span>${WORD[s]}</span>`;
 
-function sparkline(values, w, h) {
-  const min = Math.min(...values) - 4, max = Math.max(...values) + 2;
-  const x = i => 5 + i * (w - 10) / (values.length - 1);
-  const y = v => h - 5 - (v - min) / (max - min) * (h - 10);
-  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  const last = values.length - 1;
-  return `<svg width="${w}" height="${h}" aria-label="Online devices, last 14 days">
-    <polyline points="${pts.slice(0, -1).join(" ")}" fill="none" stroke="var(--spark-muted)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <polyline points="${pts.slice(-2).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="${x(last)}" cy="${y(values[last])}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
-  </svg>`;
-}
-
-function stackedColumns(hourly, w, h) {
-  const keys = ["critical", "major", "minor"];          // bottom -> top: most severe on the baseline
-  const color = { minor: "var(--warning)", major: "var(--serious)", critical: "var(--critical)" };
-  const n = hourly.minor.length, left = 30, bottom = 26, top = 18;
-  const plotH = h - bottom - top, slot = (w - left) / n, bw = Math.min(22, slot - 10);
-  const yMax = 10, y = v => top + plotH - v / yMax * plotH;
-  let s = `<svg width="${w}" height="${h}" role="img" aria-label="Alerts triggered per hour, last 24 hours">`;
-  for (const t of [0, 5, 10]) {
-    s += `<line x1="${left}" x2="${w}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? "var(--axis)" : "var(--grid)"}" stroke-width="1"/>`;
-    s += `<text class="tick" x="${left - 10}" y="${y(t) + 4}" text-anchor="end">${t}</text>`;
-  }
-  let peak = { i: 0, v: 0 };
-  for (let i = 0; i < n; i++) {
-    const cx = left + slot * i + slot / 2, x0 = cx - bw / 2;
-    const segs = keys.map(k => ({ k, v: hourly[k][i] })).filter(sg => sg.v > 0);
-    const total = segs.reduce((a, b) => a + b.v, 0);
-    if (total > peak.v) peak = { i, v: total };
-    let acc = 0;
-    segs.forEach((sg, j) => {
-      const gap = j > 0 ? 2 : 0;                        // 2px surface gap between stacked segments
-      const y0 = y(acc) - gap, y1 = y(acc + sg.v);
-      const r = j === segs.length - 1 ? Math.min(4, (y0 - y1) / 2) : 0;   // rounded data-end, square baseline
-      s += `<path d="M${x0},${y0} V${y1 + r} Q${x0},${y1} ${x0 + r},${y1} H${x0 + bw - r} Q${x0 + bw},${y1} ${x0 + bw},${y1 + r} V${y0} Z" fill="${color[sg.k]}"/>`;
-      acc += sg.v;
-    });
-    if (i % 3 === 0 || i === n - 1) {
-      const last = i === n - 1;
-      const lbl = last ? "Now" : String((15 + i) % 24).padStart(2, "0") + ":00";
-      s += `<text class="tick" x="${cx}" y="${h - 6}" text-anchor="middle"${last ? ' style="fill:var(--text-1);font-weight:600"' : ""}>${lbl}</text>`;
+function columns(values, w, h) {
+  const n = values.length, slot = w / n, bw = Math.min(14, slot - 6), top = 14, base = h - 2;
+  const max = 4, y = v => base - v / max * (base - top);
+  let s = `<svg width="${w}" height="${h}">`;
+  s += `<line x1="0" x2="${w}" y1="${base}" y2="${base}" stroke="var(--axis)"/>`;
+  values.forEach((v, i) => {
+    const x0 = slot * i + (slot - bw) / 2, last = i === n - 1;
+    const fill = last ? "var(--accent)" : "color-mix(in srgb, var(--accent) 45%, var(--card))";
+    if (v > 0) {
+      const y1 = y(v), r = Math.min(3, (base - y1) / 2);
+      s += `<path d="M${x0},${base} V${y1 + r} Q${x0},${y1} ${x0 + r},${y1} H${x0 + bw - r} Q${x0 + bw},${y1} ${x0 + bw},${y1 + r} V${base} Z" fill="${fill}"/>`;
     }
-  }
-  const pcx = left + slot * peak.i + slot / 2;           // label the extreme only
-  s += `<text x="${pcx}" y="${y(peak.v) - 8}" text-anchor="middle" style="fill:var(--text-2);font-size:12px;font-weight:600">${peak.v}</text>`;
+    if (last) s += `<text x="${x0 + bw / 2}" y="${y(v) - 4}" text-anchor="middle" style="fill:var(--text-1);font-size:11px;font-weight:600">${v}</text>`;
+  });
   return s + "</svg>";
 }
 
 function render() {
-  const D = DATA, pctOnline = (D.devices.online / D.devices.total * 100).toFixed(1);
-  const sum = a => a.reduce((x, y) => x + y, 0);
-  const alerts24 = sum(D.alerts.hourly.critical) + sum(D.alerts.hourly.major) + sum(D.alerts.hourly.minor);
-  const invTotal = sum(D.inventory.map(r => r.total));
+  const D = DATA, sum = a => a.reduce((x, y) => x + y, 0);
+  const healthy = Object.entries(D.healthyServers).flatMap(([o, list]) => list.map(n => ({ n, o })));
+  const totalServers = D.online.servers[1];
+
+  const pillar = (key, label) => {
+    const p = D.pillars[key], total = p.servers + p.workstations;
+    return `<div class="card pillar" style="--state:${STATEVAR[p.state]}">
+      <div class="top"><div class="label">${CAT[key].replace('width="16" height="16"', 'width="18" height="18"')}${label}</div>${chip(total ? p.state : "ok")}</div>
+      <div class="mid"><div class="value">${total}</div><div class="unit">devices affected</div></div>
+      <div class="split">
+        <span class="srv"><b>${p.servers}</b> ${plural(p.servers, "server")}</span><span><b>${p.workstations}</b> ${plural(p.workstations, "workstation")}</span>
+        <span class="note" style="background:none;padding:0">${p.note}</span>
+      </div>
+    </div>`;
+  };
 
   document.getElementById("screen").innerHTML = `
   <header>
     <div class="brand">
       <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg></div>
-      <div><h1>Fleet overview</h1><p>${D.orgs} organisations · ${fmt(D.devices.total)} devices</p></div>
+      <div><h1>Infrastructure health</h1><p>${D.orgs} organisations · ${totalServers} servers · ${D.online.workstations[1]} workstations</p></div>
     </div>
     <div class="header-right">
       <div class="sync"><span class="dot"></span>NinjaOne synced ${D.syncedSecondsAgo} s ago</div>
-      <div class="clock"><div class="time">14:32</div><div class="date">Monday, 2 November</div></div>
+      <div class="clock"><div class="time">14:32</div><div class="date">Tuesday, 3 November</div></div>
     </div>
   </header>
 
-  <div class="card tile hero">
-    <div class="label">Devices online</div>
-    <div class="hero-row">
-      <div class="value">${D.devices.online}<small>/ ${D.devices.total}</small></div>
-      ${sparkline(D.devices.onlineTrend, 84, 40)}
-    </div>
-    <div class="foot"><span>${pctOnline} % online</span><span>·</span><span>${D.devices.total - D.devices.online} offline</span></div>
-  </div>
+  ${pillar("hardware", "Hardware failures")}
+  ${pillar("backup", "Backups")}
+  ${pillar("antivirus", "Antivirus threats")}
 
-  <div class="card tile">
-    <div class="label">Active alerts</div>
-    <div class="value">${D.alerts.active}</div>
-    <div class="foot">
-      <span class="sev-inline"><i style="background:var(--critical)"></i>${D.alerts.critical} critical</span>
-      <span class="sev-inline"><i style="background:var(--serious)"></i>${D.alerts.major} major</span>
-      <span class="sev-inline"><i style="background:var(--warning)"></i>${D.alerts.minor} minor</span>
+  <div class="card online">
+    <div class="label">Online now</div>
+    <div class="orow">
+      <span class="k">Servers</span><span class="v">${D.online.servers[0]}<small>/ ${D.online.servers[1]}</small></span>
+      <div class="meter"><div style="width:${D.online.servers[0] / D.online.servers[1] * 100}%"></div></div>
+    </div>
+    <div class="orow">
+      <span class="k">Workstations</span><span class="v">${D.online.workstations[0]}<small>/ ${D.online.workstations[1]}</small></span>
+      <div class="meter"><div style="width:${D.online.workstations[0] / D.online.workstations[1] * 100}%"></div></div>
     </div>
   </div>
 
-  <div class="card tile">
-    <div class="label">Patch compliance</div>
-    <div class="value">${D.patches.compliance}<small>%</small></div>
-    <div>
-      <div class="meter"><div style="width:${D.patches.compliance}%"></div></div>
-      <div class="foot" style="margin-top:10px"><span>${D.patches.pending} pending</span><span>·</span><span>${D.patches.failed} failed</span></div>
-    </div>
-  </div>
-
-  <div class="card tile">
-    <div class="label">Backups · last 24 h</div>
-    <div class="value">${D.backups.successRate}<small>%</small></div>
-    <div class="foot"><span>${D.backups.ok} of ${D.backups.total} jobs OK</span><span class="delta-good">▲ ${D.backups.delta} pts</span></div>
-  </div>
-
-  <div class="card tile">
-    <div class="label">Pending reboots</div>
-    <div class="value">${D.reboots.pending}</div>
-    <div class="foot"><span>${D.reboots.overdue} waiting more than 7 days</span></div>
-  </div>
-
-  <div class="card tile">
-    <div class="label">Antivirus protected</div>
-    <div class="value">${D.antivirus.protected}<small>/ ${D.antivirus.total}</small></div>
-    <div class="foot"><span>${D.antivirus.threats} threats quarantined today</span></div>
-  </div>
-
-  <section class="card alerts-chart">
+  <section class="card servers">
     <div class="card-head">
-      <div><div class="card-title">Alerts triggered · last 24 hours</div><div class="card-sub">${alerts24} alerts · <span class="delta-bad">▲ ${D.alerts.deltaVsYesterday} vs yesterday</span></div></div>
-      <div class="legend">
-        <span><i style="background:var(--critical)"></i>Critical</span>
-        <span><i style="background:var(--serious)"></i>Major</span>
-        <span><i style="background:var(--warning)"></i>Minor</span>
-      </div>
+      <div class="card-title">Servers</div>
+      <div class="card-sub">${D.affectedServers.length} need attention · ${healthy.length} healthy</div>
     </div>
-    <div id="chart" style="flex:1;min-height:0"></div>
+    <div class="affected">
+      ${D.affectedServers.map(s => `
+        <div class="srv-card" style="--state:${STATEVAR[s.state]}">
+          <div class="hd"><div><span class="nm">${s.n}</span><span class="org">${s.o}</span></div>${chip(s.state)}</div>
+          ${s.issues.map(i => `<div class="issue">${CAT[i.c]}<span>${i.t}</span><span class="since">${i.since}</span></div>`).join("")}
+        </div>`).join("")}
+    </div>
+    <div class="section-label"><i></i>Healthy · ${healthy.length} servers</div>
+    <div class="healthy">
+      ${healthy.map(h => `<div class="ok-tile"><div class="n"><i></i>${h.n}</div><div class="o">${h.o}</div></div>`).join("")}
+    </div>
   </section>
 
-  <section class="card inventory">
-    <div class="card-head"><div class="card-title">Device inventory</div><div class="card-sub">${fmt(invTotal)} total</div></div>
-    <div class="segbar" role="img" aria-label="Devices by type">
-      ${D.inventory.map(r => {
-        const pct = r.total / invTotal * 100;
-        return `<div style="flex:${r.total};background:var(${r.c});color:${r.ink}">${pct >= 9 ? Math.round(pct) + "%" : ""}</div>`;
-      }).join("")}
-    </div>
-    ${D.inventory.map((r, i) => `
-      <div class="inv-row${i === 0 ? " first" : ""}"><i style="background:var(${r.c})"></i><span>${r.name}</span><span class="n">${r.total}</span><span class="on">${r.online} online</span></div>`).join("")}
-    <div class="inv-foot"><span><b>${D.devices.total - D.devices.online}</b> offline now</span><span><b>${D.devices.stale}</b> not seen for 30+ days</span></div>
-  </section>
-
-  <section class="card feed">
-    <div class="card-head"><div class="card-title">Latest alerts</div><div class="card-sub">newest first</div></div>
-    <div class="feed-list">
-      ${D.feed.map(f => `
-        <div class="feed-item">
-          <div class="sev ${f.sev}">${ICON[f.sev]}</div>
-          <div style="min-width:0"><div class="t">${f.t}</div><div class="m"><span class="sevword">${SEVWORD[f.sev]}</span> · ${f.d} · ${f.o}</div></div>
-          <div class="ago">${f.ago}</div>
+  <section class="card clients">
+    <div class="card-head"><div class="card-title">Workstations needing attention</div><div class="card-sub">${D.workstations.length} of ${D.online.workstations[1]}</div></div>
+    <div class="list">
+      ${D.workstations.map(w => `
+        <div class="item">
+          <div class="sev ${w.sev}">${CAT[w.c]}</div>
+          <div style="min-width:0"><div class="t">${w.t}</div><div class="m"><span class="sevword">${WORD[w.sev]}</span> · ${CATNAME[w.c]} · ${w.d} · ${w.o}</div></div>
+          <div class="ago">${w.ago}</div>
         </div>`).join("")}
     </div>
   </section>
 
-  <section class="card patches">
-    <div class="card-head"><div class="card-title">Patch compliance by organisation</div><div class="card-sub">target 90 %</div></div>
-    <div class="pbars">${D.patchByOrg.map(p => `
-      <div class="pbar">
-        <span class="name">${p.pct < 90 ? '<span style="color:var(--warning);display:inline-flex">' + ICON.major.replace('width="16" height="16"', 'width="13" height="13"') + '</span>' : ""}${p.o}</span>
-        <div class="track"><div class="fill${p.pct < 90 ? " warn" : ""}" style="width:${p.pct}%"></div><div class="threshold" style="left:90%"></div></div>
-        <span class="pct">${p.pct}%</span>
+  <section class="card trend">
+    <div class="card-head"><div class="card-title">New incidents · last 14 days</div><div class="card-sub">today highlighted</div></div>
+    <div class="rows">${["hardware", "backup", "antivirus"].map((k, i) => `
+      <div class="trow${i === 0 ? " first" : ""}">
+        <span class="k">${CAT[k]}${CATNAME[k]}</span>
+        <div class="spark" data-k="${k}" style="height:62px"></div>
+        <span class="tot">${sum(D.trend[k])}<small>14 days</small></span>
       </div>`).join("")}</div>
-  </section>
-
-  <section class="card attention">
-    <div class="card-head"><div class="card-title">Needs attention</div><div class="card-sub">${D.attention.length} devices</div></div>
-    <table>
-      <thead><tr><th>Device</th><th>Issue</th><th class="since">For</th></tr></thead>
-      <tbody>
-      ${D.attention.map(a => `
-        <tr>
-          <td class="dev"><b>${a.d}</b><span>${a.o}</span></td>
-          <td><span class="pill"><i style="background:var(--${a.sev})"></i>${a.issue}</span></td>
-          <td class="since">${a.since}</td>
-        </tr>`).join("")}
-      </tbody>
-    </table>
   </section>`;
 
-  const host = document.getElementById("chart");
-  host.innerHTML = stackedColumns(D.alerts.hourly, host.clientWidth, host.clientHeight);
+  document.querySelectorAll(".spark").forEach(el => {
+    el.innerHTML = columns(D.trend[el.dataset.k], el.clientWidth, el.clientHeight);
+  });
 }
 render();
 if (document.fonts) document.fonts.ready.then(render);
