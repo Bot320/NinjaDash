@@ -9,11 +9,13 @@ and **antivirus threats**. It shows which **servers** are affected first, then w
 ## Install on the mini PC (Arch / CachyOS)
 
 ```
-tar xzf ninjadash-0.1.0.tar.gz && cd ninjadash-0.1.0
-sudo ./deploy/install.sh
-sudo ninjadash edit      # add the NinjaOne API client ID + secret
-sudo ninjadash check     # test the connection
-sudo reboot              # the TV now shows the dashboard
+tar xzf ninjadash-0.2.0.tar.gz && cd ninjadash-0.2.0
+sudo ./deploy/install.sh --home-assistant
+sudo ninjadash edit                  # add the NinjaOne API client ID + secret
+sudo ninjadash check                 # test the connection
+sudo ninjadash home-assistant        # YAML for the Home Assistant screen switch
+sudo ./deploy/setup-rdp.sh           # optional: Remote Desktop for maintenance
+sudo reboot                          # boots straight into the dashboard from now on
 ```
 
 The full guide, with all options, is in [deploy/README.md](deploy/README.md). Build the

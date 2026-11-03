@@ -2,26 +2,89 @@
 # Command-line helper, installed as /usr/local/bin/ninjadash.
 #   sudo ninjadash check            test the NinjaOne connection, show what the dashboard sees
 #   sudo ninjadash check --fields   ... and list the field names NinjaOne returns
-#   sudo ninjadash status           service status and the last log lines
-#   sudo ninjadash restart          restart after editing /etc/ninjadash/*
+#   sudo ninjadash edit             edit the settings (API client, theme, port, token)
+#   sudo ninjadash restart          apply changed settings or rules
+#   sudo ninjadash status           are the service and the kiosk running?
 #   sudo ninjadash logs             follow the log
-#   sudo ninjadash edit             edit the settings (API client, theme, port)
+#   ninjadash screen on|off|status  switch the TV picture (same as Home Assistant does)
+#   sudo ninjadash desktop          TV: stop the dashboard and show the normal login screen (KDE)
+#   sudo ninjadash kiosk            TV: back to the dashboard (a reboot does this too)
+#   sudo ninjadash home-assistant   show the Home Assistant configuration incl. token
 set -euo pipefail
+ENV=/etc/ninjadash/ninjadash.env
+DM_FILE=/etc/ninjadash/.disabled-display-manager
+
+getenv() { sed -n "s/^$1=//p" "$ENV" 2>/dev/null | tail -1; }
+port()   { local p; p=$(getenv LISTEN); p=${p##*:}; echo "${p:-8080}"; }
+dm()     {
+  if [[ -f $DM_FILE ]]; then cat "$DM_FILE"
+  else for d in sddm plasmalogin gdm lightdm ly greetd; do
+         systemctl cat "$d.service" &>/dev/null && { echo "$d.service"; return; }; done
+  fi
+}
+need_root() { [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo ninjadash $*"; exit 1; }; }
+
 case "${1:-help}" in
   check)
-    shift
-    exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV=/etc/ninjadash/ninjadash.env \
+    need_root check; shift
+    exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV="$ENV" \
       PYTHONDONTWRITEBYTECODE=1 python3 -m ninjadash check "$@" ;;
+  edit)
+    need_root edit
+    "${EDITOR:-nano}" "$ENV"
+    echo "Apply the changes with: sudo ninjadash restart" ;;
+  restart)
+    need_root restart
+    systemctl restart ninjadash.service
+    if systemctl is-active --quiet ninjadash-kiosk.service; then systemctl restart ninjadash-kiosk.service; fi
+    echo "Restarted." ;;
   status)
     systemctl --no-pager status ninjadash.service ninjadash-kiosk.service 2>/dev/null || true ;;
-  restart)
-    systemctl restart ninjadash.service
-    systemctl is-enabled --quiet ninjadash-kiosk.service 2>/dev/null && systemctl restart ninjadash-kiosk.service
-    echo "Restarted." ;;
   logs)
     exec journalctl -u ninjadash.service -u ninjadash-kiosk.service -f ;;
-  edit)
-    exec "${EDITOR:-nano}" /etc/ninjadash/ninjadash.env ;;
+  screen)
+    url="http://127.0.0.1:$(port)/api/screen"
+    case "${2:-status}" in
+      on|off|toggle) curl -fsS -X POST "$url/$2"; echo ;;
+      status)        curl -fsS "$url"; echo ;;
+      *) echo "Usage: ninjadash screen on|off|toggle|status"; exit 1 ;;
+    esac ;;
+  desktop)
+    need_root desktop
+    d=$(dm); [[ -n $d ]] || { echo "No desktop login manager found (e.g. sddm). Install KDE first."; exit 1; }
+    systemctl stop ninjadash-kiosk.service || true
+    systemctl start "$d"
+    echo "The TV now shows the $d login screen. Back to the dashboard: sudo ninjadash kiosk (or reboot)." ;;
+  kiosk)
+    need_root kiosk
+    d=$(dm); [[ -n $d ]] && systemctl stop "$d" 2>/dev/null || true
+    systemctl start ninjadash-kiosk.service
+    echo "The TV shows the dashboard again." ;;
+  home-assistant|ha)
+    need_root home-assistant
+    token=$(getenv SCREEN_TOKEN); listen=$(getenv LISTEN)
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src") print $(i+1)}')
+    if [[ -z $token || $listen != 0.0.0.0:* ]]; then
+      echo "Home Assistant access is not switched on. Run: sudo /opt/ninjadash/deploy/install.sh --home-assistant"; exit 1
+    fi
+    cat <<EOF
+# Home Assistant: add to configuration.yaml, then restart Home Assistant.
+# A switch "NinjaDash screen" appears; use it in dashboards and automations.
+switch:
+  - platform: rest
+    name: NinjaDash screen
+    unique_id: ninjadash_screen
+    resource: http://${ip:-<mini-pc-ip>}:$(port)/api/screen
+    method: post
+    body_on: '{"state": "on"}'
+    body_off: '{"state": "off"}'
+    is_on_template: "{{ value_json.on }}"
+    headers:
+      Authorization: Bearer $token
+      Content-Type: application/json
+    scan_interval: 30
+EOF
+    ;;
   *)
-    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

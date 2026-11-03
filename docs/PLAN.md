@@ -169,3 +169,6 @@ NinjaOne API  eu.ninjarmm.com  (OAuth2 client-credentials, read-only "monitoring
 | Backup source | *Unknown* | Phase 1 checks: if `GET /backup/jobs` returns jobs, NinjaOne's own backup is used. Otherwise backup failures come from alerts (for example Veeam or Windows Server Backup event-log conditions). If neither exists, the Backups tile says "No backup monitoring found" instead of a false green |
 | Mini PC | **4 GB RAM, CachyOS** | No desktop session, cage + Chromium on tty1, pacman packages, backend in a venv |
 | Theme | **Light and dark** | `THEME=auto`, light 07:00–19:00 |
+| Boot | **Straight into the dashboard, no login manager** | Installer disables SDDM; `ninjadash desktop` / `kiosk` swap the TV between KDE and the dashboard |
+| Screen off | **From Home Assistant** | `/api/screen` with a token; a screen agent cuts HDMI via `wlr-randr` (cage 0.3 supports output management); only the switch is reachable from the network |
+| Remote maintenance | **RDP** | xrdp (AUR) with an XFCE session, because Plasma 6.8 has no X11 session; the TV keeps showing the dashboard |

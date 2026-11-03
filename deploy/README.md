@@ -4,18 +4,18 @@
 
 Pick one:
 
-- **USB stick:** copy `ninjadash-0.1.0.tar.gz` onto it, plug it into the mini PC, copy it to your home folder.
+- **USB stick:** copy `ninjadash-0.2.0.tar.gz` onto it, plug it into the mini PC, copy it to your home folder.
 - **Over the network** (from the PC that has the file; replace `user` and `minipc` with the mini PC's login and name or IP):
   ```
-  scp ninjadash-0.1.0.tar.gz user@minipc:
+  scp ninjadash-0.2.0.tar.gz user@minipc:
   ```
 - **From GitHub** (the repo is private, so the mini PC needs a GitHub login): `git clone https://github.com/Bot320/NinjaDash.git`
 
 Then unpack it on the mini PC:
 
 ```
-tar xzf ninjadash-0.1.0.tar.gz
-cd ninjadash-0.1.0
+tar xzf ninjadash-0.2.0.tar.gz
+cd ninjadash-0.2.0
 ```
 
 ## 2. Install
@@ -28,7 +28,9 @@ Choose how the screen should work:
 | `sudo ./deploy/install.sh --desktop yourname` | Keeps your desktop. The dashboard opens full screen when `yourname` logs in. Alt+F4 closes it. |
 | `sudo ./deploy/install.sh --backend-only` | Only the dashboard service. Open `http://localhost:8080` in any browser yourself. Good for a first test. |
 
-The script installs `python`, `curl`, `cage`, `chromium`, `inter-font` and `noto-fonts` with pacman,
+Add `--home-assistant` to any of these to let Home Assistant switch the screen (see below).
+
+The script installs `python`, `curl`, `cage`, `wlr-randr`, `chromium`, `inter-font` and `noto-fonts` with pacman,
 creates two service users (`ninjadash`, `ninjadash-kiosk`), copies the program to `/opt/ninjadash`
 and starts the service. Running it again later **updates** NinjaDash and keeps your settings.
 
@@ -59,6 +61,58 @@ Until the API client is filled in, the dashboard shows **example data** with an 
    ```
 5. Kiosk mode only: `sudo reboot`. After the reboot the TV shows the dashboard.
 
+## Boot behaviour
+
+In kiosk mode the mini PC boots **straight into the dashboard**: no login screen and no desktop.
+The installer disables the login manager (SDDM) after asking. Your KDE stays installed and can be
+started whenever you need it (see below). Every reboot goes back to the dashboard.
+
+## Home Assistant: screen on/off
+
+Install (or re-run the installer) with `--home-assistant`, or answer "yes" when it asks:
+
+```
+sudo ./deploy/install.sh --home-assistant
+sudo ninjadash home-assistant        # prints the YAML for Home Assistant, incl. IP and token
+```
+
+Paste the printed block into Home Assistant's `configuration.yaml` and restart Home Assistant.
+You get a switch **NinjaDash screen** for dashboards and automations (e.g. off at 19:00, on at 07:00,
+or off when nobody is in the office).
+
+How it works:
+- Home Assistant calls `http://<mini-pc>:8080/api/screen` with a secret token.
+- From the network, the screen switch is the **only** thing reachable. The dashboard data stays on the
+  mini PC (`REMOTE_ACCESS=screen`).
+- Off cuts the HDMI signal (`wlr-randr`). Most TVs then show "no signal" and go to standby by
+  themselves. The page also goes black, as a fallback.
+- On switches the signal back on. **Some TVs don't wake up from standby when the signal returns.**
+  If yours doesn't, control the TV itself from Home Assistant instead (most smart TVs have an
+  integration: LG webOS, Samsung, Sony Bravia, Android TV), or use a USB HDMI-CEC adapter.
+- From the mini PC itself: `ninjadash screen off`, `ninjadash screen on`, `ninjadash screen status`.
+- After a restart of the service the screen is **on** again.
+
+## Remote Desktop (RDP) for maintenance
+
+```
+sudo /opt/ninjadash/deploy/setup-rdp.sh
+```
+
+This installs `xrdp` (from the AUR, via paru or yay) and a small **XFCE** desktop. Connect with any RDP
+client (Windows *Remote Desktop Connection*, Remmina, the Microsoft Remote Desktop app) to the mini PC
+and log in with your Linux user and password. You get your own desktop, and **the TV keeps showing the
+dashboard** the whole time.
+
+Why XFCE and not KDE: xrdp needs an X11 desktop, and KDE Plasma 6.8 is Wayland-only. To get KDE, put it on
+the TV itself from the RDP terminal:
+
+| Command | TV shows |
+|---|---|
+| `sudo ninjadash desktop` | the normal login screen (SDDM). Log in to KDE with keyboard and mouse at the mini PC |
+| `sudo ninjadash kiosk` | the dashboard again (a reboot does the same) |
+
+Keep RDP inside your own network or VPN. Don't forward port 3389 on the router.
+
 ## Everyday commands
 
 | Command | Does |
@@ -69,6 +123,9 @@ Until the API client is filled in, the dashboard shows **example data** with an 
 | `sudo ninjadash restart` | Applies changed settings or rules |
 | `sudo ninjadash status` | Shows whether the service and the kiosk run |
 | `sudo ninjadash logs` | Follows the log (Ctrl+C to stop) |
+| `ninjadash screen off` / `on` / `status` | Switches the TV picture, like Home Assistant does |
+| `sudo ninjadash desktop` / `kiosk` | TV: KDE login screen / dashboard |
+| `sudo ninjadash home-assistant` | Prints the Home Assistant configuration |
 
 On the kiosk screen, **Ctrl+Alt+F2** switches to a text console for maintenance. The dashboard
 stays on tty1, and Ctrl+Alt+F1 goes back to it.

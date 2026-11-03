@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 
 log = logging.getLogger("ninjadash.api")
-USER_AGENT = "NinjaDash/0.1 (+wall dashboard; read-only)"
+USER_AGENT = "NinjaDash/0.2 (+wall dashboard; read-only)"
 
 
 class NinjaError(Exception):

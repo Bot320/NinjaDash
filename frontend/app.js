@@ -222,7 +222,18 @@
     }
   }
 
+  // Screen on/off from Home Assistant: checked every 3 s so the black overlay follows quickly.
+  function applyScreen(s) { document.documentElement.classList.toggle("screen-off", !!s && s.on === false); }
+  async function pollScreen() {
+    try {
+      const r = await fetch("/api/screen", { cache: "no-store" });
+      if (r.ok) applyScreen(await r.json());
+    } catch (e) { /* keep the current state */ }
+  }
+  setInterval(pollScreen, 3000);
+
   fit();
+  if (window.NINJADASH_INITIAL) applyScreen(window.NINJADASH_INITIAL.screen);
   if (window.NINJADASH_INITIAL) {
     data = window.NINJADASH_INITIAL;
     applyTheme();

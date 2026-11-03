@@ -10,6 +10,9 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 
+# Screen on/off from Home Assistant (switches the HDMI output). Ends together with this session.
+"$(dirname "$(readlink -f "$0")")/screen-agent.sh" &
+
 PROFILE="${HOME:-/tmp}/.ninjadash-chromium"
 mkdir -p "$PROFILE"
 

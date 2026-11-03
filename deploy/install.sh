@@ -4,7 +4,9 @@
 #   sudo ./deploy/install.sh                 full kiosk: dashboard full screen on the TV at boot
 #   sudo ./deploy/install.sh --backend-only  only the dashboard service; open http://localhost:8080 yourself
 #   sudo ./deploy/install.sh --desktop USER  keep the desktop; open the dashboard full screen when USER logs in
+#   add --home-assistant to let Home Assistant switch the screen on/off over the network
 #   add --yes to answer "yes" to every question (no prompts)
+# Remote Desktop (RDP) for maintenance is a separate step: sudo ./deploy/setup-rdp.sh
 #
 # Running it again updates NinjaDash and keeps your settings in /etc/ninjadash/.
 set -euo pipefail
@@ -12,6 +14,7 @@ set -euo pipefail
 MODE=kiosk
 DESKTOP_USER=""
 ASSUME_YES=0
+HA=""
 PREFIX=/opt/ninjadash
 ETC=/etc/ninjadash
 ORIG_ARGS=("$@")
@@ -25,6 +28,17 @@ ask()  {  # ask "question" -> 0 for yes
   [[ -t 0 ]] || die "$1 (run with --yes to answer yes without a prompt)"
   local a; read -r -p "  $1 [y/N] " a; [[ $a =~ ^[YyJj] ]]
 }
+setenv() {  # setenv KEY VALUE: set or add a line in the settings file
+  local f=$ETC/ninjadash.env
+  if grep -q "^$1=" "$f"; then sed -i "s|^$1=.*|$1=$2|" "$f"; else printf '%s=%s\n' "$1" "$2" >> "$f"; fi
+}
+open_port() {  # open a TCP port in the firewall, if one is active
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow "$1/tcp" >/dev/null && ok "Firewall (ufw): opened port $1"
+  elif command -v firewall-cmd >/dev/null && systemctl is-active --quiet firewalld; then
+    firewall-cmd --permanent --add-port="$1/tcp" >/dev/null && firewall-cmd --reload >/dev/null && ok "Firewall (firewalld): opened port $1"
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,7 +46,8 @@ while [[ $# -gt 0 ]]; do
     --desktop) MODE=desktop; DESKTOP_USER="${2:-}"; shift || true
                [[ -n $DESKTOP_USER ]] || die "--desktop needs a user name, e.g. --desktop $USER" ;;
     --yes|-y) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --home-assistant|--ha) HA=1 ;;
+    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
   shift
@@ -53,7 +68,7 @@ say "Installing NinjaDash $VERSION ($MODE mode)"
 # ---- packages ---------------------------------------------------------------------
 PKGS=(python curl)
 case $MODE in
-  kiosk)   PKGS+=(cage chromium inter-font noto-fonts) ;;
+  kiosk)   PKGS+=(cage wlr-randr chromium inter-font noto-fonts) ;;
   desktop) PKGS+=(chromium inter-font noto-fonts) ;;
 esac
 say "Installing packages: ${PKGS[*]}"
@@ -76,7 +91,8 @@ cp -r "$SRC/backend" "$SRC/frontend" "$SRC/deploy" "$PREFIX/"
 find "$PREFIX" -name '__pycache__' -prune -exec rm -rf {} +
 chown -R root:root "$PREFIX"
 chmod -R u=rwX,go=rX "$PREFIX"
-chmod 755 "$PREFIX/deploy/kiosk/kiosk.sh" "$PREFIX/deploy/install.sh" "$PREFIX/deploy/uninstall.sh"
+chmod 755 "$PREFIX/deploy/kiosk/kiosk.sh" "$PREFIX/deploy/kiosk/screen-agent.sh" "$PREFIX/deploy/install.sh" \
+          "$PREFIX/deploy/uninstall.sh" "$PREFIX/deploy/setup-rdp.sh"
 python3 -m compileall -q "$PREFIX/backend" >/dev/null || true
 install -m 755 "$SRC/deploy/ninjadash" /usr/local/bin/ninjadash
 ok "Installed to $PREFIX, helper command: ninjadash"
@@ -106,6 +122,25 @@ fi
 PORT=$(sed -n 's/^LISTEN=.*:\([0-9]\+\).*/\1/p' "$ETC/ninjadash.env" | tail -1)
 PORT=${PORT:-8080}
 URL="http://127.0.0.1:$PORT/"
+
+# ---- Home Assistant screen control ----------------------------------------------------
+if [[ -z $(sed -n 's/^SCREEN_TOKEN=//p' "$ETC/ninjadash.env" | tail -1) ]]; then
+  setenv SCREEN_TOKEN "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  ok "Created a secret token for screen control"
+fi
+LISTEN_NOW=$(sed -n 's/^LISTEN=//p' "$ETC/ninjadash.env" | tail -1)
+if [[ $LISTEN_NOW == 0.0.0.0:* ]]; then
+  HA_ON=1
+elif [[ $HA == 1 ]] || { [[ -z $HA && $ASSUME_YES == 0 && -t 0 && $MODE != backend ]] && \
+     ask "Let Home Assistant switch the screen on and off over the network?"; }; then
+  setenv LISTEN "0.0.0.0:$PORT"
+  setenv REMOTE_ACCESS screen
+  HA_ON=1
+  ok "Home Assistant can switch the screen (port $PORT; other PCs can only use the screen switch, with the token)"
+else
+  HA_ON=0
+fi
+[[ $HA_ON == 1 ]] && open_port "$PORT"
 
 # ---- backend service ----------------------------------------------------------------
 say "Starting the dashboard service"
@@ -189,5 +224,7 @@ else
 fi
 echo "  Dashboard in a browser on this PC: $URL"
 echo "  Status / logs:                    sudo ninjadash status   ·   sudo ninjadash logs"
+[[ $HA_ON == 1 ]] && echo "  Home Assistant configuration:     sudo ninjadash home-assistant"
+echo "  Remote Desktop for maintenance:   sudo /opt/ninjadash/deploy/setup-rdp.sh"
 [[ $REBOOT == 1 ]] && echo && echo "  Reboot to start the kiosk screen: sudo reboot"
 exit 0

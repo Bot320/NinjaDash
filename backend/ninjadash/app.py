@@ -32,6 +32,9 @@ class App:
         self._next_orgs = 0.0
         self._unavailable: dict[str, float] = {}
         self._stop = threading.Event()
+        self.screen_on = True              # switched by Home Assistant via /api/screen
+        self.screen_changed = time.time()
+        self.screen_agent_seen = 0.0       # last poll from the kiosk's screen agent
 
     @property
     def demo(self) -> bool:
@@ -56,6 +59,25 @@ class App:
             "ready": body is not None,
         }
         return {**(body or {}), **meta}
+
+    def screen(self) -> dict:
+        return {
+            "on": self.screen_on,
+            "state": "on" if self.screen_on else "off",
+            "changed": self.screen_changed,
+            "agent": time.time() - self.screen_agent_seen < 15,
+        }
+
+    def set_screen(self, want: str) -> dict:
+        want = str(want or "").strip().lower()
+        if want not in ("on", "off", "toggle", "true", "false", "1", "0"):
+            raise ValueError("state must be on, off or toggle")
+        new = (not self.screen_on) if want == "toggle" else want in ("on", "true", "1")
+        if new != self.screen_on:
+            self.screen_on = new
+            self.screen_changed = time.time()
+            log.info("Screen switched %s", "on" if new else "off")
+        return self.screen()
 
     def healthy(self) -> bool:
         if self.demo:

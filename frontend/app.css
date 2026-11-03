@@ -27,6 +27,9 @@ body { font-family: var(--font); color: var(--text-1); -webkit-font-smoothing: a
   grid-template-rows: 48px 168px 440px minmax(0, 1fr);
   transform-origin: center center;
 }
+/* Screen switched off by Home Assistant. The kiosk also cuts the HDMI signal; this is the fallback. */
+.blackout { position: fixed; inset: 0; background: #000; z-index: 100; display: none; }
+html.screen-off .blackout { display: block; }
 .boot { grid-column: 1 / -1; grid-row: 1 / -1; display: grid; place-items: center; font-size: 22px; color: var(--text-3); }
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 22px 24px;
