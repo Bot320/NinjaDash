@@ -19,16 +19,49 @@ kiosk mode on a 1080p TV and focuses on three things: **hardware failures**, **f
 
 ## Install
 
-On the mini PC (Arch Linux / CachyOS), from your normal user account:
+On the mini PC (Arch Linux / CachyOS), in a terminal, from your normal user account.
+
+### Install or update: one command
+
+```bash
+curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+```
+
+This downloads the newest version to `~/ninjadash-src` and runs the installer. For an update that's all:
+your settings, token, rules and Home Assistant setup are kept. Then `sudo reboot`.
+
+The first install, with the Home Assistant screen switch:
+
+```bash
+curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --home-assistant
+```
+
+Test a branch (e.g. from a pull request) instead of `main`:
+
+```bash
+curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --branch fix/kiosk-polish
+```
+
+> **Copy and paste:** on GitHub, every grey box has a **copy button** in its top-right corner.
+> In a Linux terminal, paste with **Ctrl+Shift+V** or right-click → *Paste* (plain Ctrl+V doesn't work).
+> On the text console (Ctrl+Alt+F2) there is no clipboard, so type the one-line command above by hand.
+
+### After installing
+
+```bash
+sudo bash ~/ninjadash-src/deploy/setup-rdp.sh   # Remote Desktop (optional, recommended)
+sudo ninjadash edit                             # NinjaOne Client ID + Secret (see below)
+sudo ninjadash check                            # test the NinjaOne connection
+sudo ninjadash home-assistant                   # configuration for Home Assistant
+sudo reboot                                     # from now on it boots into the dashboard
+```
+
+### Step by step, without the one-liner
 
 ```bash
 curl -L -o ninjadash.tar.gz https://github.com/Bot320/NinjaDash/archive/refs/heads/main.tar.gz
 tar xzf ninjadash.tar.gz && cd NinjaDash-main
-sudo bash deploy/install.sh --home-assistant   # dashboard + kiosk + Home Assistant screen switch
-sudo bash deploy/setup-rdp.sh                  # Remote Desktop (optional, recommended)
-sudo ninjadash edit                            # NinjaOne Client ID + Secret (see below)
-sudo ninjadash check                           # test the NinjaOne connection
-sudo reboot                                    # from now on it boots into the dashboard
+sudo bash deploy/install.sh --home-assistant
 ```
 
 Installer options:
@@ -258,10 +291,8 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 ## Update
 
 ```bash
-cd ~ && curl -L -o ninjadash.tar.gz https://github.com/Bot320/NinjaDash/archive/refs/heads/main.tar.gz
-rm -rf NinjaDash-main && tar xzf ninjadash.tar.gz && cd NinjaDash-main
-sudo bash deploy/install.sh
-sudo ninjadash restart
+curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+sudo reboot
 ```
 
 Settings, rules, token and history are kept. The installer remembers that Home Assistant is enabled.
