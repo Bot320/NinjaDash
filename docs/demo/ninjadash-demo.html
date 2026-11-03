@@ -1,0 +1,509 @@
+<title>NinjaDash Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: a fixed 1920x1080 kiosk canvas, scaled to fit, under a small demo toolbar.
+   Tokens: light on :root, dark via OS setting or the viewer's toggle; the demo's own
+   Light/Dark buttons re-declare them on .frame. */
+:root {
+  --page: #f3f3f0; --card: #ffffff; --card-raised: #f6f6f3; --card-ok: #f8f8f6;
+  --border: rgba(11,11,11,0.08); --text-1: #0b0b0b; --text-2: #52514e; --text-3: #898781;
+  --axis: #c3c2b7; --accent: #2a78d6; --accent-track: #dde9f8; --offline: #898781;
+  --warn-ink: #b07a00; --shadow: 0 1px 2px rgba(11,11,11,0.04);
+  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0b0c0e; --card: #16181c; --card-raised: #1d2025; --card-ok: #1a1d21;
+    --border: rgba(255,255,255,0.06); --text-1: #f0efec; --text-2: #b9bcc3; --text-3: #7d818a;
+    --axis: #34373e; --accent: #3987e5; --accent-track: #1c2a3d; --offline: #7d818a;
+    --warn-ink: #fab219; --shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+  }
+}
+:root[data-theme="dark"], .frame.force-dark {
+  color-scheme: dark;
+  --page: #0b0c0e; --card: #16181c; --card-raised: #1d2025; --card-ok: #1a1d21;
+  --border: rgba(255,255,255,0.06); --text-1: #f0efec; --text-2: #b9bcc3; --text-3: #7d818a;
+  --axis: #34373e; --accent: #3987e5; --accent-track: #1c2a3d; --offline: #7d818a;
+  --warn-ink: #fab219; --shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+}
+.frame.force-light {
+  color-scheme: light;
+  --page: #f3f3f0; --card: #ffffff; --card-raised: #f6f6f3; --card-ok: #f8f8f6;
+  --border: rgba(11,11,11,0.08); --text-1: #0b0b0b; --text-2: #52514e; --text-3: #898781;
+  --axis: #c3c2b7; --accent: #2a78d6; --accent-track: #dde9f8; --offline: #898781;
+  --warn-ink: #b07a00; --shadow: 0 1px 2px rgba(11,11,11,0.04);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-1); font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+/* ---------- Demo toolbar ---------- */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.bar h1 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+.bar p { margin: 2px 0 0; font-size: 13px; color: var(--text-3); }
+.bar .intro { flex: 1 1 260px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); }
+.seg button, .btn {
+  font: inherit; font-size: 13px; font-weight: 550; color: var(--text-2); background: none; border: 0;
+  padding: 6px 12px; border-radius: 7px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--card-raised); color: var(--text-1); box-shadow: inset 0 0 0 1px var(--border); }
+.btn { background: var(--card); border: 1px solid var(--border); color: var(--text-1); padding: 7px 13px; border-radius: 10px; }
+.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.btn:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Scaled stage ---------- */
+.frame { position: relative; width: 100%; border-radius: 14px; overflow: hidden; background: var(--page);
+  box-shadow: 0 0 0 1px var(--border); }
+.frame:fullscreen { border-radius: 0; display: grid; place-items: center; }
+.scaler { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.frame:fullscreen .scaler { position: relative; }
+
+/* ---------- Dashboard (1920x1080 design pixels) ---------- */
+.screen {
+  width: 1920px; height: 1080px; padding: 28px; background: var(--page); color: var(--text-1);
+  display: grid; gap: 20px; font-feature-settings: "cv11", "ss01";
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: 48px 168px 440px minmax(0, 1fr);
+}
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 22px 24px;
+  box-shadow: var(--shadow); min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
+.card-title { font-size: 15px; font-weight: 600; }
+.card-sub { font-size: 13px; color: var(--text-3); }
+
+header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(140deg, #3987e5 0%, #6250d6 100%); display: grid; place-items: center; }
+.brand .h { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.brand .s { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 28px; }
+.sync { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2);
+  padding: 8px 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); }
+.sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 20%, transparent); }
+.clock { text-align: right; }
+.clock .time { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.clock .date { font-size: 13px; color: var(--text-3); margin-top: 4px; }
+
+.pillar { grid-column: span 3; justify-content: space-between; position: relative; overflow: hidden; }
+.pillar::before, .srv-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--state); }
+.pillar .top { display: flex; align-items: center; justify-content: space-between; }
+.pillar .label { font-size: 14px; color: var(--text-2); font-weight: 550; display: flex; align-items: center; gap: 9px; }
+.pillar .mid { display: flex; align-items: baseline; gap: 12px; }
+.pillar .value { font-size: 48px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; }
+.pillar .unit { font-size: 15px; color: var(--text-3); }
+.split { display: flex; gap: 8px; font-size: 13px; align-items: center; }
+.split > span { padding: 5px 10px; border-radius: 8px; background: var(--card-raised); color: var(--text-2); }
+.split b { color: var(--text-1); font-weight: 650; }
+.split .srv { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--state) 45%, transparent); }
+.split .note { margin-left: auto; background: none; padding: 0; font-size: 12.5px; color: var(--text-3); }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--text-1); }
+.chip .ic { display: inline-flex; }
+.chip.critical { background: color-mix(in srgb, var(--critical) 16%, transparent); } .chip.critical .ic { color: var(--critical); }
+.chip.warning { background: color-mix(in srgb, var(--warning) 18%, transparent); } .chip.warning .ic { color: var(--warn-ink); }
+.chip.ok { background: color-mix(in srgb, var(--good) 16%, transparent); } .chip.ok .ic { color: var(--good); }
+.chip.offline { background: var(--card-raised); } .chip.offline .ic { color: var(--offline); }
+
+.online { grid-column: span 3; justify-content: space-between; }
+.online .label { font-size: 14px; color: var(--text-2); font-weight: 550; }
+.orow { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: baseline; }
+.orow .k { font-size: 13px; color: var(--text-2); }
+.orow .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+.orow .v small { font-size: 13px; color: var(--text-3); font-weight: 500; margin-left: 2px; }
+.meter { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: var(--accent-track); overflow: hidden; }
+.meter > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width .6s ease; }
+
+.servers { grid-column: span 7; grid-row: span 2; }
+.affected { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.srv-card { position: relative; border-radius: 12px; background: var(--card-raised); padding: 14px 16px 14px 20px; min-height: 96px; overflow: hidden; }
+.srv-card .hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.srv-card .nm { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.srv-card .org { font-size: 12.5px; color: var(--text-3); margin-left: 8px; font-weight: 500; }
+.issue { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13.5px; margin-top: 8px; }
+.issue > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issue svg { color: var(--text-2); }
+.issue .since { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.more { font-size: 12px; color: var(--text-3); margin-top: 6px; padding-left: 26px; }
+.section-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-3); margin: 18px 0 10px; }
+.section-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.section-label i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; }
+.healthy { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: 56px; align-content: start; gap: 8px; }
+.ok-tile { border-radius: 10px; background: var(--card-ok); border: 1px solid var(--border); padding: 7px 10px; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.ok-tile .n { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.healthy.compact .ok-tile .o { display: none; }
+.ok-tile .n i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); flex: none; }
+.ok-tile .o { font-size: 11px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 12px; }
+.all-clear { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 12px; background: color-mix(in srgb, var(--good) 10%, var(--card-raised)); }
+.all-clear .t { font-size: 16px; font-weight: 650; }
+.all-clear .m { font-size: 13px; color: var(--text-3); margin-top: 2px; }
+.all-clear svg { color: var(--good); }
+/* dense mode: more than 6 affected servers */
+.servers.dense .affected { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.servers.dense .srv-card { min-height: 0; padding: 11px 14px 11px 18px; }
+.servers.dense .srv-card .nm { font-size: 15px; }
+.servers.dense .issue { font-size: 13px; margin-top: 7px; }
+.servers.dense .healthy { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.servers.dense .section-label { margin-top: 14px; }
+
+.flash { animation: flash 1.2s ease-in-out 3; }
+@keyframes flash { 50% { background: color-mix(in srgb, var(--critical) 22%, var(--card-raised)); } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; } .meter > div { transition: none; } }
+
+.clients { grid-column: span 5; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--card-raised); }
+.item .t { font-size: 14px; font-weight: 550; line-height: 1.25; }
+.item .m { font-size: 12.5px; color: var(--text-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .ago { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.sev { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+.sev.critical { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
+.sev.warning { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warn-ink); }
+.sev.minor { background: var(--card); color: var(--text-2); }
+.sevword { font-weight: 600; color: var(--text-2); }
+
+.trend { grid-column: span 5; }
+.rows { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.trow { display: grid; grid-template-columns: 120px 1fr 64px; gap: 16px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.trow:first-child { border-top: 0; }
+.trow .k { font-size: 14px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.trow .tot { text-align: right; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
+.trow .tot small { display: block; font-size: 11.5px; color: var(--text-3); font-weight: 500; }
+
+.legend-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.legend-notes div { font-size: 13px; color: var(--text-2); line-height: 1.5; padding: 12px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); min-width: 0; }
+.legend-notes b { color: var(--text-1); font-weight: 600; display: block; margin-bottom: 2px; }
+</style>
+
+<div class="wrap">
+  <div class="bar">
+    <div class="intro">
+      <h1>NinjaDash design demo</h1>
+      <p>Example data. On the TV this fills a 1920 × 1080 screen; here it is scaled to fit your window.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Example situation">
+        <button type="button" id="sc-clear" data-scenario="clear" aria-pressed="false">All clear</button>
+        <button type="button" id="sc-typical" data-scenario="typical" aria-pressed="true">Typical day</button>
+        <button type="button" id="sc-bad" data-scenario="bad" aria-pressed="false">Bad day</button>
+      </div>
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" id="th-system" data-theme-choice="system" aria-pressed="true">System</button>
+        <button type="button" id="th-light" data-theme-choice="light" aria-pressed="false">Light</button>
+        <button type="button" id="th-dark" data-theme-choice="dark" aria-pressed="false">Dark</button>
+      </div>
+      <button type="button" class="btn primary" id="simulate">Simulate new alert</button>
+      <button type="button" class="btn" id="fullscreen">Fullscreen</button>
+    </div>
+  </div>
+
+  <div class="frame" id="frame">
+    <div class="scaler" id="scaler"><div class="screen" id="screen"></div></div>
+  </div>
+
+  <div class="legend-notes">
+    <div><b>Top row</b>The three things you asked for: hardware failures, backups and antivirus threats. Servers are counted separately and outlined, because they come first.</div>
+    <div><b>Servers panel</b>Every server with a problem gets a card listing all its issues, worst first. Healthy servers shrink to small green tiles. On a bad day the cards get more compact so everything still fits.</div>
+    <div><b>Right side</b>Workstations with problems (lower priority), and a 14-day trend so you can see whether today is normal.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const svg = (p, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  const CAT = {
+    hardware:  p => svg('<rect x="2" y="3.5" width="12" height="9" rx="2"/><path d="M2 9h12"/><circle cx="11.3" cy="11" r=".6" fill="currentColor"/>', p),
+    backup:    p => svg('<path d="M13.2 8.4A5.2 5.2 0 1 1 11.7 4.3"/><path d="M12.4 1.8v2.9H9.5"/><path d="M8 5.5V8l1.7 1.2"/>', p),
+    antivirus: p => svg('<path d="M8 1.8 13.2 3.7v3.9c0 3-2.2 5.3-5.2 6.6-3-1.3-5.2-3.6-5.2-6.6V3.7z"/><path d="M5.8 8l1.5 1.5 2.9-3"/>', p),
+    offline:   p => svg('<path d="M8 1.8v5.4"/><path d="M4.4 4.3a5.2 5.2 0 1 0 7.2 0"/>', p)
+  };
+  const CATNAME = { hardware: "Hardware", backup: "Backup", antivirus: "Antivirus" };
+  const SEV = {
+    critical: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><rect x="7" y="3.6" width="2" height="5.6" rx="1" fill="#fff"/><circle cx="8" cy="11.6" r="1.1" fill="#fff"/></svg>',
+    warning:  '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 14.6 13.6H1.4z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="7.1" y="5.6" width="1.8" height="4.4" rx=".9" fill="#fff"/><circle cx="8" cy="11.8" r=".95" fill="#fff"/></svg>',
+    ok:       '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    offline:  '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 8h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  };
+  const WORD = { critical: "Critical", warning: "Warning", ok: "All clear", offline: "Offline", minor: "Minor" };
+  const STATEVAR = { critical: "var(--critical)", warning: "var(--warning)", ok: "var(--good)", offline: "var(--offline)" };
+  const RANK = { critical: 0, offline: 1, warning: 2, minor: 3, ok: 4 };
+  const plural = (n, w) => n === 1 ? w : w + "s";
+  const chip = s => `<span class="chip ${s}"><span class="ic">${SEV[s]}</span>${WORD[s]}</span>`;
+  const sum = a => a.reduce((x, y) => x + y, 0);
+
+  const ORGS = {
+    "Acme Logistics":   ["SRV-DC01","SRV-DC02","SRV-APP01","SRV-APP02","SRV-ERP01","SRV-WEB01","SRV-VEEAM","HV-ACME01","HV-ACME02","SRV-RDS01","SRV-FS01","SRV-SQL01"],
+    "Riverside Clinic": ["SRV-DC01","SRV-DC02","SRV-PACS01","SRV-PACS02","SRV-APP01","SRV-APP02","SRV-RDS01","SRV-SQL02","HV-HOST01","HV-HOST03","SRV-FS02","SRV-RDS02","HV-HOST02","SRV-APP03"],
+    "Northwind Dental": ["DC-01","DC-02","SRV-XRAY","SRV-FS01","SRV-APP01","NAS-01"],
+    "Brightline Legal": ["SRV-DC01","SRV-DMS01","SRV-FS01","SRV-SQL01","SRV-RDS01"],
+    "Internal IT":      ["SRV-DC01","SRV-RMM","SRV-MON01","SRV-FS01","SRV-BKP01","PVE-01","SRV-PRINT"],
+    "Harbor Café":      ["SRV-POS01","NAS-01"]
+  };
+  const ALL_SERVERS = Object.entries(ORGS).flatMap(([o, l]) => l.map(n => ({ n, o })));
+
+  const SCENARIOS = {
+    clear: {
+      online: { servers: [46, 46], workstations: [371, 392] },
+      notes: { hardware: "No hardware alerts", backup: "134 of 134 jobs OK · 24 h", antivirus: "438 of 438 protected" },
+      affected: [],
+      workstations: [], workstationTotal: 0,
+      trend: { hardware: [1,0,0,1,0,0,0,1,0,0,0,0,0,0], backup: [0,0,1,0,0,0,0,0,0,1,0,0,0,0], antivirus: [0,0,0,0,0,1,0,0,0,0,0,0,0,0] },
+      wsCounts: { hardware: 0, backup: 0, antivirus: 0 }
+    },
+    typical: {
+      online: { servers: [45, 46], workstations: [356, 392] },
+      notes: { hardware: "RAID · SMART · PSU", backup: "131 of 134 jobs OK · 24 h", antivirus: "1 active · 1 quarantined" },
+      affected: [
+        { n: "SRV-FS01",  o: "Acme Logistics",   state: "critical", issues: [{ c: "hardware", t: "RAID 5 degraded · disk 2 failed", since: "3 h" }] },
+        { n: "SRV-RDS02", o: "Riverside Clinic", state: "critical", issues: [{ c: "antivirus", t: "Active threat: Trojan.Win64.Agent", since: "22 min" }] },
+        { n: "SRV-SQL01", o: "Acme Logistics",   state: "critical", issues: [{ c: "backup", t: "Backup failed 2× · last good 38 h ago", since: "14 h" }, { c: "hardware", t: "SMART: reallocated sectors rising", since: "2 d" }] },
+        { n: "SRV-PRINT", o: "Internal IT",      state: "offline",  issues: [{ c: "offline", t: "Not responding for 47 min", since: "47 min" }] },
+        { n: "HV-HOST02", o: "Riverside Clinic", state: "warning",  issues: [{ c: "hardware", t: "PSU 2 failed · redundancy lost", since: "6 h" }] },
+        { n: "SRV-APP03", o: "Riverside Clinic", state: "warning",  issues: [{ c: "backup", t: "No successful backup for 3 days", since: "3 d" }] }
+      ],
+      workstations: [
+        { sev: "critical", c: "hardware",  t: "SMART: drive failure predicted",  d: "WS-114",       o: "Riverside Clinic", ago: "2 h" },
+        { sev: "critical", c: "antivirus", t: "Antivirus disabled",              d: "LT-SALES-07",  o: "Acme Logistics",   ago: "1 d" },
+        { sev: "warning",  c: "antivirus", t: "Threat quarantined: PUA.Bundler", d: "WS-RECEPTION", o: "Harbor Café",      ago: "3 h" },
+        { sev: "warning",  c: "hardware",  t: "Memory errors logged (WHEA)",     d: "WS-022",       o: "Brightline Legal", ago: "5 h" },
+        { sev: "warning",  c: "backup",    t: "Backup failed",                   d: "WS-PRAXIS-03", o: "Northwind Dental", ago: "14 h" },
+        { sev: "minor",    c: "hardware",  t: "Battery health 41 %",             d: "LT-JLEE",      o: "Brightline Legal", ago: "6 d" }
+      ], workstationTotal: 6,
+      wsCounts: { hardware: 3, backup: 1, antivirus: 2 },
+      trend: { hardware: [1,0,2,1,0,0,1,3,1,0,2,1,2,3], backup: [0,1,0,0,2,0,0,1,0,0,1,0,2,1], antivirus: [0,0,1,0,0,0,0,0,1,0,0,0,1,2] }
+    },
+    bad: {
+      online: { servers: [44, 46], workstations: [341, 392] },
+      notes: { hardware: "RAID · PSU · fans", backup: "118 of 134 jobs OK · 24 h", antivirus: "7 active threats" },
+      affected: [
+        { n: "SRV-RDS02", o: "Riverside Clinic", state: "critical", issues: [{ c: "antivirus", t: "Active threat: Ransom.Win64.Generic", since: "8 min" }] },
+        { n: "SRV-RDS01", o: "Riverside Clinic", state: "critical", issues: [{ c: "antivirus", t: "Active threat: Ransom.Win64.Generic", since: "6 min" }] },
+        { n: "SRV-FS02",  o: "Riverside Clinic", state: "critical", issues: [{ c: "antivirus", t: "Mass file renames blocked", since: "5 min" }] },
+        { n: "SRV-FS01",  o: "Acme Logistics",   state: "critical", issues: [{ c: "hardware", t: "RAID 5 failed · volume offline", since: "12 min" }, { c: "backup", t: "Backup failed · source unavailable", since: "10 min" }] },
+        { n: "SRV-SQL01", o: "Acme Logistics",   state: "critical", issues: [{ c: "backup", t: "Backup failed 3× · last good 62 h ago", since: "1 d" }, { c: "hardware", t: "SMART: reallocated sectors rising", since: "2 d" }] },
+        { n: "HV-HOST02", o: "Riverside Clinic", state: "critical", issues: [{ c: "hardware", t: "PSU 2 failed · fan 3 failed", since: "6 h" }] },
+        { n: "SRV-PRINT", o: "Internal IT",      state: "offline",  issues: [{ c: "offline", t: "Not responding for 2 h", since: "2 h" }] },
+        { n: "DC-02",     o: "Northwind Dental", state: "offline",  issues: [{ c: "offline", t: "Not responding for 25 min", since: "25 min" }] },
+        { n: "SRV-APP03", o: "Riverside Clinic", state: "warning",  issues: [{ c: "backup", t: "No successful backup for 3 days", since: "3 d" }] },
+        { n: "SRV-VEEAM", o: "Acme Logistics",   state: "warning",  issues: [{ c: "backup", t: "Backup repository 96 % full", since: "9 h" }] }
+      ],
+      workstations: [
+        { sev: "critical", c: "antivirus", t: "Active threat: Ransom.Win64.Generic", d: "WS-031",       o: "Riverside Clinic", ago: "9 min" },
+        { sev: "critical", c: "antivirus", t: "Active threat: Ransom.Win64.Generic", d: "WS-044",       o: "Riverside Clinic", ago: "7 min" },
+        { sev: "critical", c: "hardware",  t: "SMART: drive failure predicted",      d: "WS-114",       o: "Riverside Clinic", ago: "2 h" },
+        { sev: "critical", c: "antivirus", t: "Antivirus disabled",                  d: "LT-SALES-07",  o: "Acme Logistics",   ago: "1 d" },
+        { sev: "warning",  c: "hardware",  t: "Memory errors logged (WHEA)",         d: "WS-022",       o: "Brightline Legal", ago: "5 h" },
+        { sev: "warning",  c: "backup",    t: "Backup failed",                       d: "WS-PRAXIS-03", o: "Northwind Dental", ago: "14 h" }
+      ], workstationTotal: 11,
+      wsCounts: { hardware: 5, backup: 2, antivirus: 4 },
+      trend: { hardware: [1,0,2,1,0,0,1,3,1,0,2,1,2,6], backup: [0,1,0,0,2,0,0,1,0,0,1,0,2,5], antivirus: [0,0,1,0,0,0,0,0,1,0,0,0,1,7] }
+    }
+  };
+
+  let scenario = "typical", data, syncAgo = 18;
+
+  function load(name) {
+    scenario = name;
+    data = JSON.parse(JSON.stringify(SCENARIOS[name]));
+    syncAgo = 18;
+    render();
+  }
+
+  function pillarStats(key) {
+    const servers = data.affected.filter(s => s.issues.some(i => i.c === key));
+    const issues = servers.flatMap(s => s.issues.filter(i => i.c === key).map(() => s.state));
+    const wsSev = data.workstations.filter(w => w.c === key).map(w => w.sev);
+    const worst = [...issues, ...wsSev].sort((a, b) => RANK[a] - RANK[b])[0];
+    const state = !worst ? "ok" : worst === "minor" ? "warning" : worst === "offline" ? "warning" : worst;
+    return { servers: servers.length, workstations: data.wsCounts[key], state };
+  }
+
+  function columns(values, w, h) {
+    const n = values.length, slot = w / n, bw = Math.min(14, slot - 6), top = 16, base = h - 2;
+    const max = Math.max(4, ...values), y = v => base - v / max * (base - top);
+    let s = `<svg width="${w}" height="${h}" aria-hidden="true"><line x1="0" x2="${w}" y1="${base}" y2="${base}" stroke="var(--axis)"/>`;
+    values.forEach((v, i) => {
+      const x0 = slot * i + (slot - bw) / 2, last = i === n - 1;
+      const fill = last ? "var(--accent)" : "color-mix(in srgb, var(--accent) 45%, var(--card))";
+      if (v > 0) {
+        const y1 = y(v), r = Math.min(3, (base - y1) / 2);
+        s += `<path d="M${x0},${base} V${y1 + r} Q${x0},${y1} ${x0 + r},${y1} H${x0 + bw - r} Q${x0 + bw},${y1} ${x0 + bw},${y1 + r} V${base} Z" fill="${fill}"/>`;
+      }
+      if (last) s += `<text x="${x0 + bw / 2}" y="${y(v) - 4}" text-anchor="middle" fill="var(--text-1)" style="font-size:11px;font-weight:600;font-family:inherit">${v}</text>`;
+    });
+    return s + "</svg>";
+  }
+
+  function render(flashName) {
+    const D = data;
+    const affectedNames = new Set(D.affected.map(s => s.o + "/" + s.n));
+    const healthy = ALL_SERVERS.filter(s => !affectedNames.has(s.o + "/" + s.n));
+    const dense = D.affected.length > 6;
+    D.affected.sort((a, b) => RANK[a.state] - RANK[b.state]);
+
+    const pillar = (key, label) => {
+      const p = pillarStats(key), total = p.servers + p.workstations;
+      return `<div class="card pillar" style="--state:${STATEVAR[p.state]}">
+        <div class="top"><div class="label">${CAT[key](18)}${label}</div>${chip(p.state)}</div>
+        <div class="mid"><div class="value">${total}</div><div class="unit">${total === 1 ? "device" : "devices"} affected</div></div>
+        <div class="split"><span class="srv"><b>${p.servers}</b> ${plural(p.servers, "server")}</span><span><b>${p.workstations}</b> ${plural(p.workstations, "workstation")}</span><span class="note">${D.notes[key]}</span></div>
+      </div>`;
+    };
+
+    const srvCard = s => {
+      const shown = dense ? s.issues.slice(0, 1) : s.issues;
+      const extra = s.issues.length - shown.length;
+      return `<div class="srv-card${flashName === s.n ? " flash" : ""}" style="--state:${STATEVAR[s.state]}">
+        <div class="hd"><div><span class="nm">${s.n}</span><span class="org">${s.o}</span></div>${chip(s.state)}</div>
+        ${shown.map(i => `<div class="issue">${CAT[i.c](16)}<span>${i.t}</span><span class="since">${i.since}</span></div>`).join("")}
+        ${extra > 0 ? `<div class="more">+${extra} more ${plural(extra, "issue")}</div>` : ""}
+      </div>`;
+    };
+
+    const ws = D.workstations;
+    document.getElementById("screen").innerHTML = `
+    <header>
+      <div class="brand">
+        <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg></div>
+        <div><div class="h">Infrastructure health</div><div class="s">6 organisations · ${ALL_SERVERS.length} servers · ${D.online.workstations[1]} workstations</div></div>
+      </div>
+      <div class="header-right">
+        <div class="sync"><span class="dot"></span><span id="sync-text"></span></div>
+        <div class="clock"><div class="time" id="clock-time"></div><div class="date" id="clock-date"></div></div>
+      </div>
+    </header>
+
+    ${pillar("hardware", "Hardware failures")}
+    ${pillar("backup", "Backups")}
+    ${pillar("antivirus", "Antivirus threats")}
+
+    <div class="card online">
+      <div class="label">Online now</div>
+      ${[["Servers", D.online.servers], ["Workstations", D.online.workstations]].map(([k, v]) => `
+        <div class="orow"><span class="k">${k}</span><span class="v">${v[0]}<small>/ ${v[1]}</small></span>
+          <div class="meter"><div style="width:${v[0] / v[1] * 100}%"></div></div></div>`).join("")}
+    </div>
+
+    <section class="card servers${dense ? " dense" : ""}">
+      <div class="card-head"><div class="card-title">Servers</div>
+        <div class="card-sub">${D.affected.length ? `${D.affected.length} need attention · ` : ""}${healthy.length} healthy</div></div>
+      ${D.affected.length ? `<div class="affected">${D.affected.map(srvCard).join("")}</div>`
+        : `<div class="all-clear">${SEV.ok.replace(/14/g, "28")}<div><div class="t">All ${ALL_SERVERS.length} servers healthy</div><div class="m">No hardware, backup or antivirus issues on any server.</div></div></div>`}
+      <div class="section-label"><i></i>Healthy · ${healthy.length} ${plural(healthy.length, "server")}</div>
+      <div class="healthy">${healthy.map(h => `<div class="ok-tile"><div class="n"><i></i>${h.n}</div><div class="o">${h.o}</div></div>`).join("")}</div>
+    </section>
+
+    <section class="card clients">
+      <div class="card-head"><div class="card-title">Workstations needing attention</div>
+        <div class="card-sub">${D.workstationTotal > ws.length ? `worst ${ws.length} of ${D.workstationTotal}` : `${ws.length} of ${D.online.workstations[1]}`}</div></div>
+      ${ws.length ? `<div class="list">${ws.map(w => `
+        <div class="item"><div class="sev ${w.sev}">${CAT[w.c](16)}</div>
+          <div style="min-width:0"><div class="t">${w.t}</div><div class="m"><span class="sevword">${WORD[w.sev]}</span> · ${CATNAME[w.c]} · ${w.d} · ${w.o}</div></div>
+          <div class="ago">${w.ago}</div></div>`).join("")}</div>`
+        : `<div class="all-clear">${SEV.ok.replace(/14/g, "28")}<div><div class="t">No workstation issues</div><div class="m">${D.online.workstations[1]} workstations checked.</div></div></div>`}
+    </section>
+
+    <section class="card trend">
+      <div class="card-head"><div class="card-title">New incidents · last 14 days</div><div class="card-sub">today highlighted</div></div>
+      <div class="rows">${["hardware", "backup", "antivirus"].map(k => `
+        <div class="trow"><span class="k">${CAT[k](16)}${CATNAME[k]}</span>
+          <div class="spark" data-k="${k}" style="height:62px"></div>
+          <span class="tot">${sum(D.trend[k])}<small>14 days</small></span></div>`).join("")}</div>
+    </section>`;
+
+    const hEl = document.querySelector(".healthy");
+    if (hEl && healthy.length) {
+      const cols = dense ? 9 : 8, rows = Math.ceil(healthy.length / cols);
+      const rowH = Math.max(30, Math.min(64, Math.floor((hEl.clientHeight - (rows - 1) * 8) / rows)));
+      hEl.style.gridAutoRows = rowH + "px";
+      hEl.classList.toggle("compact", rowH < 44);
+    }
+    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k], el.clientWidth || 300, 62); });
+    tick();
+    document.getElementById("simulate").disabled = healthy.length === 0;
+  }
+
+  function tick() {
+    const now = new Date();
+    const t = document.getElementById("clock-time"), d = document.getElementById("clock-date"), s = document.getElementById("sync-text");
+    if (t) t.textContent = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    if (d) d.textContent = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    if (s) s.textContent = syncAgo < 5 ? "NinjaOne synced just now" : `NinjaOne synced ${syncAgo} s ago`;
+  }
+  setInterval(() => { syncAgo = (syncAgo + 1) % 60; tick(); }, 1000);
+
+  const SIM_ISSUES = [
+    { c: "hardware", t: "SMART: drive failure predicted · disk 1" },
+    { c: "antivirus", t: "Active threat: Trojan.Win64.Agent" },
+    { c: "backup", t: "Backup failed · VSS snapshot error" },
+    { c: "hardware", t: "RAID 1 degraded · disk 0 failed" }
+  ];
+  let simIndex = 0;
+  document.getElementById("simulate").addEventListener("click", () => {
+    const taken = new Set(data.affected.map(s => s.o + "/" + s.n));
+    const candidates = ALL_SERVERS.filter(s => !taken.has(s.o + "/" + s.n));
+    if (!candidates.length) return;
+    const pick = candidates[(simIndex * 7) % candidates.length];
+    const issue = SIM_ISSUES[simIndex % SIM_ISSUES.length];
+    simIndex++;
+    data.affected.unshift({ n: pick.n, o: pick.o, state: "critical", issues: [{ c: issue.c, t: issue.t, since: "now" }] });
+    data.trend[issue.c][13]++;
+    syncAgo = 0;
+    render(pick.n);
+  });
+
+  document.querySelectorAll("[data-scenario]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-scenario]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    load(b.dataset.scenario);
+    try { location.hash = b.dataset.scenario; } catch (e) {}
+  }));
+  function fromHash() {
+    const h = (location.hash || "").slice(1);
+    const name = SCENARIOS[h] ? h : "typical";
+    document.querySelectorAll("[data-scenario]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.scenario === name)));
+    if (name !== scenario || !data) load(name);
+  }
+  window.addEventListener("hashchange", fromHash);
+
+  const frame = document.getElementById("frame"), scaler = document.getElementById("scaler");
+  document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-theme-choice]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    frame.classList.toggle("force-light", b.dataset.themeChoice === "light");
+    frame.classList.toggle("force-dark", b.dataset.themeChoice === "dark");
+  }));
+
+  function fit() {
+    const fs = document.fullscreenElement === frame;
+    const w = frame.clientWidth, h = fs ? frame.clientHeight : Infinity;
+    const scale = Math.min(w / 1920, h / 1080);
+    scaler.style.transform = `scale(${scale})`;
+    if (!fs) frame.style.height = Math.round(1080 * scale) + "px";
+    else frame.style.height = "";
+    scaler.style.width = fs ? 1920 * scale + "px" : "";
+    scaler.style.height = fs ? 1080 * scale + "px" : "";
+  }
+  new ResizeObserver(fit).observe(frame);
+  document.addEventListener("fullscreenchange", fit);
+  document.getElementById("fullscreen").addEventListener("click", () => {
+    if (frame.requestFullscreen) frame.requestFullscreen().catch(() => {});
+  });
+
+  fromHash();
+  fit();
+  if (document.fonts) document.fonts.ready.then(() => render());
+})();
+</script>
