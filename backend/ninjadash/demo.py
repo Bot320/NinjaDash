@@ -1,6 +1,8 @@
 """Example data, used until an API client is configured (or with DEMO=1). Names are made up."""
 from __future__ import annotations
 
+import os
+
 ORGS = {
     "Acme Logistics":   ["SRV-DC01", "SRV-DC02", "SRV-APP01", "SRV-APP02", "SRV-ERP01", "SRV-WEB01", "SRV-VEEAM", "HV-ACME01", "HV-ACME02", "SRV-RDS01", "SRV-FS01", "SRV-SQL01"],
     "Riverside Clinic": ["SRV-DC01", "SRV-DC02", "SRV-PACS01", "SRV-PACS02", "SRV-APP01", "SRV-APP02", "SRV-RDS01", "SRV-SQL02", "HV-HOST01", "HV-HOST03", "SRV-FS02", "SRV-RDS02", "HV-HOST02", "SRV-APP03"],
@@ -13,6 +15,29 @@ M, H, D = 60, 3600, 86400
 
 
 def demo_summary(now: float) -> dict:
+    s = _typical(now)
+    if os.environ.get("NINJADASH_DEMO_SCENARIO") == "busy":      # stress test for the layout fitting
+        extra = [("SRV-PACS01", "Riverside Clinic", "hardware", "RAID 1 degraded · disk 0 failed"),
+                 ("SRV-DMS01", "Brightline Legal", "backup", "Backup failed 3× · VSS error"),
+                 ("HV-ACME01", "Acme Logistics", "hardware", "Fan 2 failed"),
+                 ("SRV-MON01", "Internal IT", "antivirus", "Antivirus definitions out of date"),
+                 ("SRV-XRAY", "Northwind Dental", "hardware", "SMART: drive failure predicted"),
+                 ("SRV-POS01", "Harbor Café", "backup", "No successful backup for 5 days"),
+                 ("SRV-WEB01", "Acme Logistics", "offline", "Not responding"),
+                 ("SRV-ERP01", "Acme Logistics", "hardware", "Memory errors logged (WHEA)"),
+                 ("NAS-01", "Northwind Dental", "hardware", "Synology: Volume 1 degraded"),
+                 ("SRV-RMM", "Internal IT", "backup", "Backup repository 97 % full")]
+        for i, (n, o, c, t) in enumerate(extra):
+            s["affected"].append({"name": n, "org": o, "state": "offline" if c == "offline" else ("critical" if i % 2 == 0 else "warning"),
+                                  "issues": [{"category": c, "severity": "critical", "text": t, "since": now - (i + 1) * 1800}]})
+        taken = {(a["org"], a["name"]) for a in s["affected"]}
+        s["healthy"] = [h for h in s["healthy"] if (h["org"], h["name"]) not in taken]
+        s["workstations"] = (s["workstations"] * 2)[:10]
+        s["workstationTotal"] = 23
+    return s
+
+
+def _typical(now: float) -> dict:
     def iss(cat, sev, text, ago):
         return {"category": cat, "severity": sev, "text": text, "since": now - ago}
 
@@ -54,4 +79,25 @@ def demo_summary(now: float) -> dict:
             "antivirus": [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 2],
         },
         "ignoredDevices": 0,
+        "updates": {
+            "os": {"approval": 312, "queued": 41, "failed": 3, "approvalDevices": 214, "approvalServers": 12, "top": [
+                {"name": "2026-11 Cumulative Update for Windows Server 2022 (KB5049983)", "devices": 12, "servers": 12, "severity": "critical"},
+                {"name": "2026-11 Cumulative Update for Windows 11 24H2 (KB5049981)", "devices": 168, "servers": 0, "severity": "critical"},
+                {"name": "2026-11 .NET Framework 4.8.1 Update (KB5049620)", "devices": 131, "servers": 9, "severity": "important"},
+                {"name": "Microsoft Defender Antivirus platform update", "devices": 22, "servers": 0, "severity": "moderate"},
+            ]},
+            "apps": {"approval": 57, "queued": 12, "failed": 1, "approvalDevices": 49, "approvalServers": 3, "top": [
+                {"name": "Google Chrome 156.0.8078.79", "devices": 31, "servers": 0, "severity": "critical"},
+                {"name": "Adobe Acrobat Reader 25.001.20756", "devices": 14, "servers": 0, "severity": "important"},
+                {"name": "7-Zip 26.00", "devices": 9, "servers": 3, "severity": "moderate"},
+                {"name": "Notepad++ 8.8.7", "devices": 6, "servers": 2, "severity": "low"},
+            ]},
+            "storage": {"total": 5, "critical": 2, "servers": 3, "warnPercent": 90, "items": [
+                {"device": "SRV-FS01", "org": "Acme Logistics", "tier": "server", "volume": "D:", "label": "Data", "usedPct": 96.4, "free": 72e9, "capacity": 2e12, "severity": "critical"},
+                {"device": "DC-02", "org": "Northwind Dental", "tier": "server", "volume": "C:", "label": "", "usedPct": 95.1, "free": 4.9e9, "capacity": 100e9, "severity": "critical"},
+                {"device": "SRV-SQL02", "org": "Riverside Clinic", "tier": "server", "volume": "L:", "label": "Logs", "usedPct": 91.8, "free": 41e9, "capacity": 500e9, "severity": "warning"},
+                {"device": "WS-RECEPTION", "org": "Harbor Café", "tier": "workstation", "volume": "C:", "label": "", "usedPct": 93.0, "free": 16.8e9, "capacity": 240e9, "severity": "warning"},
+                {"device": "LT-SALES-07", "org": "Acme Logistics", "tier": "workstation", "volume": "C:", "label": "", "usedPct": 90.4, "free": 24e9, "capacity": 250e9, "severity": "warning"},
+            ]},
+        },
     }

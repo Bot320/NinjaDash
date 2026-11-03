@@ -80,6 +80,9 @@ def cmd_check(args) -> int:
         ("Antivirus status", "av_status", lambda: c.query("/v2/queries/antivirus-status")),
         ("Antivirus threats", "av_threats", lambda: c.query("/v2/queries/antivirus-threats")),
         ("NinjaOne Backup jobs", "backup_jobs", c.backup_jobs),
+        ("OS patches", "os_patches", lambda: c.query("/v2/queries/os-patches")),
+        ("App (software) patches", "sw_patches", lambda: c.query("/v2/queries/software-patches")),
+        ("Disk volumes", "volumes", lambda: c.query("/v2/queries/volumes")),
     ):
         try:
             rows = fn()
@@ -87,8 +90,11 @@ def cmd_check(args) -> int:
             _ok(f"{label}: {len(rows)} records")
             if rows and args.fields:
                 _info("fields: " + ", ".join(sorted(rows[0].keys())))
+            if rows and attr in ("os_patches", "sw_patches"):
+                statuses = collections.Counter(str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?")) for r in rows)
+                _info("status values: " + ", ".join(f"{k} {v}" for k, v in statuses.most_common(8)))
         except NinjaError as e:
-            _bad(f"{label}: not available ({e.status or e}). The dashboard uses alerts instead.")
+            _bad(f"{label}: not available ({e.status or e}). That panel stays empty.")
 
     print("\nAlerts by category (what the three tiles will count)")
     devs = {d.get("id"): d for d in snap.devices}
@@ -123,7 +129,14 @@ def cmd_check(args) -> int:
     for srv in s["affected"][:10]:
         _info(f"  {srv['name']} ({srv['org']}): " + "; ".join(i["text"] for i in srv["issues"]))
     _info(f"Workstation issues: {s['workstationTotal']}")
-    print("\nDone. Nothing was changed in NinjaOne.")
+    for key, label in (("os", "OS patches"), ("apps", "App updates")):
+        u = s["updates"][key]
+        if u:
+            _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices, {u['queued']} queued, {u['failed']} failed")
+    st = s["updates"]["storage"]
+    if st:
+        _info(f"Low storage: {st['total']} volumes ≥ {st['warnPercent']:.0f} % full ({st['critical']} critical)")
+    print("\nDone. Nothing was changed in NinjaOne (read-only access).")
     return 0
 
 

@@ -17,6 +17,9 @@ class Snapshot:
     av_status: list | None = None        # None = endpoint not available
     av_threats: list | None = None
     backup_jobs: list | None = None
+    os_patches: list | None = None       # /v2/queries/os-patches
+    sw_patches: list | None = None       # /v2/queries/software-patches (third-party apps)
+    volumes: list | None = None          # /v2/queries/volumes
 
 
 @dataclass
@@ -175,6 +178,98 @@ def offline_issues(clf: Classifier, devices: dict, now: float) -> list[Issue]:
     return out
 
 
+# ---- patches waiting for approval / queued, and low storage ------------------------
+APPROVAL_WORDS = ("PENDING", "MANUAL", "AWAIT", "NEEDS_APPROVAL", "NOT_APPROVED", "REQUIRES_APPROVAL", "APPROVAL")
+QUEUED_WORDS = ("APPROVED", "QUEUED", "SCHEDULED", "DOWNLOAD", "INSTALLING", "STAGED")
+SEVERITY_ORDER = {"critical": 0, "important": 1, "high": 1, "moderate": 2, "medium": 2, "low": 3, "optional": 4}
+
+
+def patch_state(p: dict) -> str | None:
+    s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper()
+    if "FAIL" in s:
+        return "failed"
+    if "REJECT" in s or s in ("INSTALLED", "SUPERSEDED", "NOT_APPLICABLE"):
+        return None
+    if any(w in s for w in QUEUED_WORDS) and "NOT_APPROVED" not in s:
+        return "queued"
+    if any(w in s for w in APPROVAL_WORDS):
+        return "approval"
+    return None
+
+
+def patch_block(rows: list | None, devices: dict) -> dict | None:
+    if rows is None:
+        return None
+    counts = {"approval": 0, "queued": 0, "failed": 0}
+    approval_devices: set = set()
+    groups: dict = {}
+    for p in rows:
+        dev_id = first(p, "deviceId", "nodeId")
+        dev = devices.get(dev_id)
+        if not dev or not dev["tier"]:
+            continue
+        state = patch_state(p)
+        if not state:
+            continue
+        counts[state] += 1
+        if state != "approval":
+            continue
+        approval_devices.add(dev_id)
+        name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
+        g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": ""})
+        g["devices"].add(dev_id)
+        if dev["tier"] == "server":
+            g["servers"].add(dev_id)
+        sev = str(first(p, "severity", "impact", "classification", default="")).lower()
+        if sev and SEVERITY_ORDER.get(sev, 9) < SEVERITY_ORDER.get(g["severity"], 9):
+            g["severity"] = sev
+    top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]), SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
+    return {
+        **counts,
+        "approvalDevices": len(approval_devices),
+        "approvalServers": len({d for d in approval_devices if devices[d]["tier"] == "server"}),
+        "top": [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"]}
+                for g in top[:8]],
+    }
+
+
+def storage_block(rows: list | None, clf: Classifier, devices: dict) -> dict | None:
+    if rows is None:
+        return None
+    warn = float(clf.display.get("storage_warn_percent", 90))
+    crit = float(clf.display.get("storage_critical_percent", 95))
+    min_bytes = float(clf.display.get("storage_min_gb", 2)) * 1024 ** 3
+    skip_words = ("recovery", "efi", "system reserved", "boot", "swap")
+    items = []
+    for v in rows:
+        dev = devices.get(first(v, "deviceId", "nodeId"))
+        if not dev or not dev["tier"]:
+            continue
+        try:
+            cap = float(first(v, "capacity", "size", "totalSpace", "totalSize"))
+            free = float(first(v, "freeSpace", "free", "availableSpace", "freeSize"))
+        except (TypeError, ValueError):
+            continue
+        if cap < min_bytes or free < 0 or free > cap:
+            continue
+        kind = str(first(v, "deviceType", "driveType", "type", default="")).lower()
+        if any(k in kind for k in ("removable", "cd", "optical", "network", "ram")):
+            continue
+        name = str(first(v, "name", "driveLetter", "mountPoint", "path", default="")).rstrip("\\") or "volume"
+        label = str(first(v, "label", "volumeName", default=""))
+        if any(w in f"{name} {label}".lower() for w in skip_words):
+            continue
+        used = 100.0 * (1 - free / cap)
+        if used >= warn:
+            items.append({"device": dev["name"], "org": dev["org"], "tier": dev["tier"], "volume": name,
+                          "label": label, "usedPct": round(used, 1), "free": free, "capacity": cap,
+                          "severity": "critical" if used >= crit else "warning"})
+    items.sort(key=lambda i: (i["tier"] != "server", -i["usedPct"]))
+    return {"total": len(items), "critical": sum(1 for i in items if i["severity"] == "critical"),
+            "servers": sum(1 for i in items if i["tier"] == "server"), "items": items[:10],
+            "warnPercent": warn}
+
+
 # ---- the summary --------------------------------------------------------------
 def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
     orgs = {o.get("id"): str(o.get("name", "")) for o in snap.orgs}
@@ -269,5 +364,10 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
         "workstations": ws_issues[:WS_LIMIT],
         "workstationTotal": len(ws_issues),
         "trend": history.trend() if history is not None else {c: [0] * 14 for c in CATEGORIES},
+        "updates": {
+            "os": patch_block(snap.os_patches, devices),
+            "apps": patch_block(snap.sw_patches, devices),
+            "storage": storage_block(snap.volumes, clf, devices),
+        },
         "ignoredDevices": sum(1 for d in devices.values() if not d["tier"]),
     }

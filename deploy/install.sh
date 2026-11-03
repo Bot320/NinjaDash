@@ -182,6 +182,9 @@ case $MODE in
     sed "s#^Environment=NINJADASH_URL=.*#Environment=NINJADASH_URL=$URL#" \
       "$SRC/deploy/systemd/ninjadash-kiosk.service" > /etc/systemd/system/ninjadash-kiosk.service
     chmod 644 /etc/systemd/system/ninjadash-kiosk.service
+    sed "s#^Environment=NINJADASH_URL=.*#Environment=NINJADASH_URL=$URL#" \
+      "$SRC/deploy/systemd/ninjadash-pointer.service" > /etc/systemd/system/ninjadash-pointer.service
+    chmod 644 /etc/systemd/system/ninjadash-pointer.service
 
     if [[ -L /etc/systemd/system/display-manager.service ]]; then
       DM=$(basename "$(readlink -f /etc/systemd/system/display-manager.service)")
@@ -199,7 +202,8 @@ case $MODE in
     if [[ $MODE == kiosk ]]; then
       systemctl set-default multi-user.target >/dev/null
       systemctl daemon-reload
-      systemctl enable ninjadash-kiosk.service >/dev/null 2>&1
+      systemctl enable ninjadash-kiosk.service ninjadash-pointer.service >/dev/null 2>&1
+      systemctl is-active --quiet ninjadash-kiosk.service && systemctl restart ninjadash-pointer.service
       ok "Kiosk enabled: the dashboard opens full screen on the TV at every boot"
       REBOOT=1
     fi

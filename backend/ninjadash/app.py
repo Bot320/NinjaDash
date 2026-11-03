@@ -1,9 +1,12 @@
 """The poller: fetches from NinjaOne on a schedule and keeps the latest summary in memory."""
 from __future__ import annotations
 
+import datetime as dt
+import json
 import logging
 import threading
 import time
+from pathlib import Path
 
 from . import __version__
 from .classify import Classifier
@@ -35,6 +38,56 @@ class App:
         self.screen_on = True              # switched by Home Assistant via /api/screen
         self.screen_changed = time.time()
         self.screen_agent_seen = 0.0       # last poll from the kiosk's screen agent
+        self.state_file = Path(cfg.history_db).parent / "state.json"
+        self.theme_mode = self._load_state().get("theme") or cfg.theme   # light | dark | auto
+
+    # ---- small persistent state (theme chosen by Home Assistant survives a reboot) ----
+    def _load_state(self) -> dict:
+        try:
+            data = json.loads(self.state_file.read_text())
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_state(self) -> None:
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.state_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"theme": self.theme_mode}))
+            tmp.replace(self.state_file)
+        except OSError as e:
+            log.warning("Could not save %s: %s", self.state_file, e)
+
+    def theme(self) -> dict:
+        mode = self.theme_mode if self.theme_mode in ("light", "dark") else "auto"
+        if mode == "auto":
+            def mins(s):
+                h, _, m = str(s).partition(":")
+                return int(h or 0) * 60 + int(m or 0)
+            now = dt.datetime.now()
+            cur, a, b = now.hour * 60 + now.minute, mins(self.cfg.light_from), mins(self.cfg.light_until)
+            light = (a <= cur < b) if a <= b else (cur >= a or cur < b)
+            effective = "light" if light else "dark"
+        else:
+            effective = mode
+        return {"mode": mode, "effective": effective, "dark": effective == "dark",
+                "lightFrom": self.cfg.light_from, "lightUntil": self.cfg.light_until}
+
+    def set_theme(self, want: str) -> dict:
+        want = str(want or "").strip().lower()
+        if want == "toggle":
+            want = "light" if self.theme()["effective"] == "dark" else "dark"
+        if want in ("on", "true", "1"):          # a Home Assistant switch "dark mode" on/off
+            want = "dark"
+        elif want in ("off", "false", "0"):
+            want = "light"
+        if want not in ("light", "dark", "auto"):
+            raise ValueError("mode must be light, dark, auto or toggle")
+        if want != self.theme_mode:
+            self.theme_mode = want
+            self._save_state()
+            log.info("Theme set to %s", want)
+        return self.theme()
 
     @property
     def demo(self) -> bool:
@@ -55,7 +108,7 @@ class App:
             "demo": self.demo,
             "setupNeeded": not self.cfg.has_credentials,
             "settingsFile": str(self.cfg.env_file or "/etc/ninjadash/ninjadash.env"),
-            "theme": {"mode": self.cfg.theme, "lightFrom": self.cfg.light_from, "lightUntil": self.cfg.light_until},
+            "theme": self.theme(),
             "ready": body is not None,
         }
         return {**(body or {}), **meta}
@@ -66,6 +119,7 @@ class App:
             "state": "on" if self.screen_on else "off",
             "changed": self.screen_changed,
             "agent": time.time() - self.screen_agent_seen < 15,
+            "theme": self.theme()["effective"],
         }
 
     def set_screen(self, want: str) -> dict:
@@ -123,6 +177,9 @@ class App:
             self.snap.av_status = self._optional("antivirus-status", lambda: c.query("/v2/queries/antivirus-status"))
             self.snap.av_threats = self._optional("antivirus-threats", lambda: c.query("/v2/queries/antivirus-threats"))
             self.snap.backup_jobs = self._optional("backup-jobs", c.backup_jobs)
+            self.snap.os_patches = self._optional("os-patches", lambda: c.query("/v2/queries/os-patches"))
+            self.snap.sw_patches = self._optional("software-patches", lambda: c.query("/v2/queries/software-patches"))
+            self.snap.volumes = self._optional("volumes", lambda: c.query("/v2/queries/volumes"))
             self._next_slow = now + self.cfg.poll_slow
         summary = build_summary(self.snap, self.clf, self.history, time.time())
         with self._lock:

@@ -35,6 +35,11 @@ other_min_severity     = "critical"
 offline_server_minutes = 15
 quarantine_hours       = 24      # quarantined threats stay visible this long
 backup_window_hours    = 24
+# Low storage panel: volumes at least this full (percent). Smaller volumes than storage_min_gb and
+# recovery / EFI / boot partitions are ignored.
+storage_warn_percent     = 90
+storage_critical_percent = 95
+storage_min_gb           = 2
 
 [[rule]]
 name      = "Backup software"

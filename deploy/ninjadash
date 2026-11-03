@@ -7,8 +7,10 @@
 #   sudo ninjadash status           are the service and the kiosk running?
 #   sudo ninjadash logs             follow the log
 #   ninjadash screen on|off|status  switch the TV picture (same as Home Assistant does)
+#   ninjadash theme light|dark|auto switch the colours (auto = light during the day); status shows it
 #   sudo ninjadash desktop          TV: stop the dashboard and show the normal login screen (KDE)
 #   sudo ninjadash kiosk            TV: back to the dashboard (a reboot does this too)
+#   sudo ninjadash pointer          hide the mouse pointer on the TV now
 #   sudo ninjadash home-assistant   show the Home Assistant configuration incl. token
 #   sudo ninjadash diag             details about the kiosk screen (send this when something looks wrong)
 set -euo pipefail
@@ -53,9 +55,19 @@ case "${1:-help}" in
     if systemctl is-active --quiet ninjadash-kiosk.service; then systemctl restart ninjadash-kiosk.service; fi
     echo "Restarted." ;;
   status)
-    systemctl --no-pager status ninjadash.service ninjadash-kiosk.service 2>/dev/null || true ;;
+    systemctl --no-pager status ninjadash.service ninjadash-kiosk.service ninjadash-pointer.service 2>/dev/null || true ;;
   logs)
-    exec journalctl -u ninjadash.service -u ninjadash-kiosk.service -f ;;
+    exec journalctl -u ninjadash.service -u ninjadash-kiosk.service -u ninjadash-pointer.service -f ;;
+  theme)
+    url="http://127.0.0.1:$(port)/api/theme"
+    case "${2:-status}" in
+      light|dark|auto|toggle) curl -fsS -X POST "$url/$2"; echo ;;
+      status)                 curl -fsS "$url"; echo ;;
+      *) echo "Usage: ninjadash theme light|dark|auto|toggle|status"; exit 1 ;;
+    esac ;;
+  pointer)
+    need_root pointer
+    exec python3 /opt/ninjadash/deploy/kiosk/pointer-nudge.py --once ;;
   screen)
     url="http://127.0.0.1:$(port)/api/screen"
     case "${2:-status}" in
@@ -90,7 +102,9 @@ case "${1:-help}" in
     need_root diag
     echo "== NinjaDash $(sed -n 's/^__version__ = "\(.*\)"/\1/p' /opt/ninjadash/backend/ninjadash/__init__.py 2>/dev/null)"
     LC_ALL=C pacman -Q cage wlroots0.19 wlroots0.18 chromium 2>/dev/null | tr '\n' ' '; echo
-    echo "== services"; systemctl is-active ninjadash.service ninjadash-kiosk.service | paste -sd' '
+    echo "== services (backend kiosk pointer)"; systemctl is-active ninjadash.service ninjadash-kiosk.service ninjadash-pointer.service | paste -sd' '
+    echo "== pointer helper log"; journalctl -u ninjadash-pointer.service -b --no-pager -o cat 2>/dev/null | tail -4
+    ls -l /dev/uinput 2>/dev/null || echo "/dev/uinput missing"
     echo "== kiosk service environment"; systemctl show ninjadash-kiosk.service -p Environment --value | tr ' ' '\n' | grep -E 'XCURSOR|NINJADASH_URL'
     for p in cage chromium; do
       pid=$(pgrep -u ninjadash-kiosk -x "$p" | head -1 || true)
@@ -111,14 +125,17 @@ case "${1:-help}" in
     if [[ -z $token || $listen != 0.0.0.0:* ]]; then
       echo "Home Assistant access is not switched on. Run: sudo /opt/ninjadash/deploy/install.sh --home-assistant"; exit 1
     fi
+    base="http://${ip:-<mini-pc-ip>}:$(port)"
     cat <<EOF
 # Home Assistant: add to configuration.yaml, then restart Home Assistant.
-# A switch "NinjaDash screen" appears; use it in dashboards and automations.
+#   switch.ninjadash_screen     TV picture on/off
+#   switch.ninjadash_dark_mode  on = dark colours, off = light colours
+#   script/automation action rest_command.ninjadash_theme_auto  back to automatic (light during the day)
 switch:
   - platform: rest
     name: NinjaDash screen
     unique_id: ninjadash_screen
-    resource: http://${ip:-<mini-pc-ip>}:$(port)/api/screen
+    resource: $base/api/screen
     method: post
     body_on: '{"state": "on"}'
     body_off: '{"state": "off"}'
@@ -127,8 +144,36 @@ switch:
       Authorization: Bearer $token
       Content-Type: application/json
     scan_interval: 30
+  - platform: rest
+    name: NinjaDash dark mode
+    unique_id: ninjadash_dark_mode
+    resource: $base/api/theme
+    method: post
+    body_on: '{"mode": "dark"}'
+    body_off: '{"mode": "light"}'
+    is_on_template: "{{ value_json.dark }}"
+    headers:
+      Authorization: Bearer $token
+      Content-Type: application/json
+    scan_interval: 60
+
+rest_command:
+  ninjadash_theme_auto:
+    url: $base/api/theme/auto
+    method: post
+    headers:
+      Authorization: Bearer $token
+
+# Example: dark mode with the sun (Settings → Automations → ⋮ → Edit in YAML)
+# automation:
+#   - alias: NinjaDash dark after sunset
+#     trigger: { platform: sun, event: sunset }
+#     action: { service: switch.turn_on, target: { entity_id: switch.ninjadash_dark_mode } }
+#   - alias: NinjaDash light after sunrise
+#     trigger: { platform: sun, event: sunrise }
+#     action: { service: switch.turn_off, target: { entity_id: switch.ninjadash_dark_mode } }
 EOF
     ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
