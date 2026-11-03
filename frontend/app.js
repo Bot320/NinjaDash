@@ -348,4 +348,19 @@
   setInterval(load, REFRESH_MS);
   setInterval(pollScreen, 3000);
   setInterval(tick, 1000);
+
+  // Never let the screen time out: a wake lock tells the compositor (cage) not to go idle.
+  // The kiosk has no screensaver anyway; this is belt and braces. Switching off is done by NinjaDash.
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if (navigator.wakeLock && !wakeLock && document.visibilityState === "visible") {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      }
+    } catch (e) { /* not supported or refused: nothing else to do */ }
+  }
+  document.addEventListener("visibilitychange", keepAwake);
+  setInterval(keepAwake, 60000);
+  keepAwake();
 })();

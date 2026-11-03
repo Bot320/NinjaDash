@@ -8,13 +8,14 @@ kiosk mode on a 1080p TV and focuses on three things: **hardware failures**, **f
 
 - Boots **straight into the dashboard**, full screen, no login screen, no mouse pointer
 - **Updates & storage** panel: OS patches and app updates waiting for approval, low disk space
-- **Home Assistant** can switch the TV picture off/on and choose light or dark colours
+- **Screen schedule** built in: on and off at set times, off at weekends and on holidays, no Home Assistant needed
+- **Home Assistant** can also switch the TV picture off/on and choose light or dark colours
 - **Remote Desktop (RDP)** for maintenance while the TV keeps showing the dashboard
 - **Strictly read-only** access to NinjaOne ([details](#read-only-access-to-ninjaone)); the API secret never leaves the mini PC
 - Lists fit themselves to the screen: the most important items stay, the rest becomes "+N more"
 
 **Contents:** [Install](#install) · [Command reference](#command-reference) · [Connect NinjaOne](#connect-ninjaone) ·
-[Read-only](#read-only-access-to-ninjaone) · [Light and dark](#light-and-dark-mode) · [Home Assistant](#home-assistant-screen-onoff) ·
+[Read-only](#read-only-access-to-ninjaone) · [Screen schedule](#screen-schedule-no-home-assistant-needed) · [Light and dark](#light-and-dark-mode) · [Home Assistant](#home-assistant-screen-onoff) ·
 [Remote Desktop](#remote-desktop-rdp) · [TV: dashboard or KDE](#tv-dashboard-or-kde) · [Dashboard panels](#what-the-dashboard-shows) ·
 [Alert rules](#alert-rules) · [Settings](#settings) · [Update](#update) · [Troubleshooting](#troubleshooting) · [Files](#files) · [Uninstall](#uninstall) · [Development](#development)
 
@@ -107,6 +108,10 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `ninjadash theme dark` / `light` | Dark or light colours (stays like that until changed, also after a reboot) |
 | `ninjadash theme auto` | Automatic: light between `LIGHT_FROM` and `LIGHT_UNTIL`, dark otherwise |
 | `ninjadash theme toggle` / `status` | Swap light and dark / show the current setting |
+| `ninjadash schedule` | Shows the screen schedule and when the screen switches next |
+| `sudo ninjadash schedule set 07:00 19:00 mon-fri` | Screen on at 07:00, off at 19:00, Monday to Friday. Weekends stay off |
+| `sudo ninjadash schedule holidays 2026-12-24..2027-01-01` | Extra days the screen stays off (comma-separated, `..` for ranges) |
+| `sudo ninjadash schedule off` | Removes the schedule |
 | `sudo ninjadash pointer` | Hides the mouse pointer on the TV right now (normally automatic) |
 | `sudo ninjadash home-assistant` | Prints the Home Assistant configuration (screen + dark mode) incl. IP and token |
 
@@ -207,6 +212,41 @@ Switch it any of these ways. The last choice wins and is kept across reboots (in
 - **The default** after a fresh install: `THEME=` and `LIGHT_FROM=` / `LIGHT_UNTIL=` in `sudo ninjadash edit`
 
 The TV follows within 3 seconds.
+
+---
+
+## Screen schedule (no Home Assistant needed)
+
+NinjaDash can switch the screen on and off by itself:
+
+```bash
+sudo ninjadash schedule set 07:00 19:00 mon-fri
+```
+
+That turns the screen on at 07:00 and off at 19:00, Monday to Friday. **On Saturdays and Sundays it stays
+off all day**, also after a reboot. Check it with `ninjadash schedule`:
+
+```
+Screen on 07:00, off 19:00, on these days: mon,tue,wed,thu,fri
+Right now the schedule says: on
+Next: off on Tue 03 Nov 19:00
+```
+
+- **Days:** `mon-fri`, `mon,wed,fri`, `weekdays`, `daily`, `mon-sat`; German names work too (`mo-fr`)
+- **Holidays / days off:** `sudo ninjadash schedule holidays 2026-12-24..2027-01-01,2027-04-05`
+- **Off time after midnight** works too (e.g. `set 16:00 02:00 mon-fri`)
+- **Manual switching still works:** Home Assistant or `ninjadash screen on` overrides the schedule
+  until the next scheduled switch. Switch the screen on on a Saturday and it stays on until Monday 19:00.
+- **Remove it:** `sudo ninjadash schedule off`
+- Settings behind it (`sudo ninjadash edit`): `SCREEN_ON`, `SCREEN_OFF`, `SCREEN_DAYS`, `SCREEN_OFF_DATES`
+
+**Screen timeout:** there is none. The kiosk has no screensaver or power saving that could blank the screen,
+and the page also holds a screen wake lock. The screen only goes off through the schedule, Home Assistant or
+`ninjadash screen off`.
+**But check the TV itself:** many TVs switch themselves off after about 4 hours without a remote-control
+button press, even with a picture (an EU energy-saving rule). Turn that off in the TV's menu. It's usually
+called *Auto Power Off*, *Eco Solution → Auto Power Off* (Samsung), *Eco Mode → Auto Power Off* (LG), or
+*Idle TV Standby* (Sony).
 
 ---
 
@@ -358,6 +398,9 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 | `SCREEN_TOKEN` | generated | Secret for the screen switch |
 | `THEME` | `auto` | Starting value: `dark`, `light` or `auto` (light between `LIGHT_FROM` and `LIGHT_UNTIL`). A choice made in Home Assistant or with `ninjadash theme` takes over |
 | `LIGHT_FROM` / `LIGHT_UNTIL` | `07:00` / `19:00` | Light-theme hours for `auto` |
+| `SCREEN_ON` / `SCREEN_OFF` | empty | Built-in screen schedule (`sudo ninjadash schedule set …`). Empty = off |
+| `SCREEN_DAYS` | `mon-fri` | Days the screen comes on; other days it stays off |
+| `SCREEN_OFF_DATES` | empty | Extra days off: `2026-12-24,2026-12-25` or `2026-12-24..2027-01-01` |
 | `HISTORY_DB` | `/var/lib/ninjadash/history.sqlite` | 14-day incident history |
 
 ---
@@ -385,6 +428,8 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | TV stays in standby after "on" | The TV doesn't wake on signal: control the TV from HA directly or use HDMI-CEC |
 | Picture edges cut off | Set the TV's picture size to *Just Scan* / *Screen Fit* / *PC* |
 | Mouse pointer visible on the TV | `sudo ninjadash pointer` hides it now. It's automatic from 0.3.0 (`ninjadash-pointer` service); if it keeps coming back, send `sudo ninjadash diag` |
+| TV switches itself off after a few hours | The TV's own energy saving: turn off *Auto Power Off* / *Idle TV Standby* in the TV menu |
+| Screen doesn't follow the schedule | `ninjadash schedule` shows what it expects; `sudo ninjadash logs` shows "Screen switched … (schedule)" |
 | Chromium "Translate" popup on the TV | Update to 0.2.2 or newer and reboot |
 | Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |

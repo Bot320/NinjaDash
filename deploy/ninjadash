@@ -8,6 +8,10 @@
 #   sudo ninjadash logs             follow the log
 #   ninjadash screen on|off|status  switch the TV picture (same as Home Assistant does)
 #   ninjadash theme light|dark|auto switch the colours (auto = light during the day); status shows it
+#   ninjadash schedule              show the screen schedule and the next switch
+#   sudo ninjadash schedule set 07:00 19:00 mon-fri   screen on/off times and days (weekends stay off)
+#   sudo ninjadash schedule holidays 2026-12-24..2027-01-01,2027-04-05   extra days off
+#   sudo ninjadash schedule off     no schedule (only Home Assistant / manual switching)
 #   sudo ninjadash desktop          TV: stop the dashboard and show the normal login screen (KDE)
 #   sudo ninjadash kiosk            TV: back to the dashboard (a reboot does this too)
 #   sudo ninjadash pointer          hide the mouse pointer on the TV now
@@ -18,6 +22,12 @@ ENV=/etc/ninjadash/ninjadash.env
 DM_FILE=/etc/ninjadash/.disabled-display-manager
 
 getenv() { sed -n "s/^$1=//p" "$ENV" 2>/dev/null | tail -1; }
+setenv() {  # setenv KEY VALUE: set or add a line in the settings file
+  if grep -q "^$1=" "$ENV"; then sed -i "s|^$1=.*|$1=$2|" "$ENV"; else printf '%s=%s\n' "$1" "$2" >> "$ENV"; fi
+}
+pycheck() {  # validate schedule values with the same parser the service uses
+  PYTHONPATH=/opt/ninjadash/backend python3 -c "import sys; from ninjadash.schedule import *; $1" "${@:2}"
+}
 port()   { local p; p=$(getenv LISTEN); p=${p##*:}; echo "${p:-8080}"; }
 dm()     {
   if [[ -f $DM_FILE ]]; then cat "$DM_FILE"
@@ -64,6 +74,41 @@ case "${1:-help}" in
       light|dark|auto|toggle) curl -fsS -X POST "$url/$2"; echo ;;
       status)                 curl -fsS "$url"; echo ;;
       *) echo "Usage: ninjadash theme light|dark|auto|toggle|status"; exit 1 ;;
+    esac ;;
+  schedule)
+    case "${2:-status}" in
+      status)
+        curl -fsS "http://127.0.0.1:$(port)/api/screen" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["schedule"]
+if not s.get("enabled"):
+    print(s.get("error") or "No screen schedule. Set one: sudo ninjadash schedule set 07:00 19:00 mon-fri")
+else:
+    print("Screen on %s, off %s, on these days: %s" % (s["on"], s["off"], s["days"]))
+    if s.get("offDates"): print("Extra days off: " + ", ".join(s["offDates"]))
+    print("Right now the schedule says: " + s["nowScheduled"])
+    if s.get("next"): print("Next: %s on %s" % (s["next"]["state"], s["next"]["at"]))' ;;
+      set)
+        need_root schedule
+        on=${3:-}; off=${4:-}; days=${5:-mon-fri}
+        [[ -n $on && -n $off ]] || { echo "Usage: sudo ninjadash schedule set 07:00 19:00 [mon-fri]"; exit 1; }
+        pycheck 'Schedule(sys.argv[1], sys.argv[2], sys.argv[3])' "$on" "$off" "$days" \
+          || { echo "Not a valid schedule. Example: sudo ninjadash schedule set 07:00 19:00 mon-fri"; exit 1; }
+        setenv SCREEN_ON "$on"; setenv SCREEN_OFF "$off"; setenv SCREEN_DAYS "$days"
+        systemctl restart ninjadash.service; sleep 2
+        "$0" schedule status ;;
+      holidays|off-dates)
+        need_root schedule
+        pycheck 'parse_dates(sys.argv[1])' "${3:-}" || { echo "Use dates like 2026-12-24,2026-12-25 or 2026-12-24..2027-01-01"; exit 1; }
+        setenv SCREEN_OFF_DATES "${3:-}"
+        systemctl restart ninjadash.service; sleep 2
+        "$0" schedule status ;;
+      off)
+        need_root schedule
+        setenv SCREEN_ON ""; setenv SCREEN_OFF ""
+        systemctl restart ninjadash.service
+        echo "Screen schedule switched off. The screen is now only switched by Home Assistant or 'ninjadash screen'." ;;
+      *) echo "Usage: ninjadash schedule [status] | sudo ninjadash schedule set 07:00 19:00 mon-fri | holidays DATES | off"; exit 1 ;;
     esac ;;
   pointer)
     need_root pointer
@@ -175,5 +220,5 @@ rest_command:
 EOF
     ;;
   *)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

@@ -79,6 +79,7 @@ class Config:
     demo: bool = False
     screen_token: str = ""
     remote_access: str = "screen"        # what other PCs on the network may use: none | screen | all
+    schedule_values: dict = field(default_factory=dict)   # SCREEN_ON / SCREEN_OFF / SCREEN_DAYS / SCREEN_OFF_DATES
     frontend_dir: Path = DEFAULT_FRONTEND
     rules_file: Path = DEFAULT_RULES
     rules: dict = field(default_factory=dict)
@@ -100,7 +101,7 @@ def load_config() -> Config:
     for key, val in os.environ.items():                  # real env wins (handy for tests)
         if key.startswith("NINJA_") or key in {
             "POLL_FAST", "POLL_SLOW", "LISTEN", "HISTORY_DB", "THEME", "LIGHT_FROM", "LIGHT_UNTIL", "DEMO",
-            "SCREEN_TOKEN", "REMOTE_ACCESS",
+            "SCREEN_TOKEN", "REMOTE_ACCESS", "SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES",
         }:
             values[key] = val
 
@@ -124,6 +125,7 @@ def load_config() -> Config:
         demo=(values.get("DEMO", "") or "").lower() in {"1", "true", "yes", "on"},
         screen_token=values.get("SCREEN_TOKEN", "") or "",
         remote_access=(values.get("REMOTE_ACCESS", "screen") or "screen").lower(),
+        schedule_values={k: values.get(k, "") for k in ("SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES")},
     )
     frontend = os.environ.get("NINJADASH_FRONTEND")
     if frontend:
