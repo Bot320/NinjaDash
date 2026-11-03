@@ -49,7 +49,7 @@ Light theme: [`preview/dashboard-light.png`](preview/dashboard-light.png). The l
 | **Devices online** (hero) | Is the fleet up? | Hero number + 14-day sparkline | `GET /v2/devices` → `offline` flag; trend from our own history DB |
 | Active alerts | How bad is it right now? | Number + severity breakdown | `GET /v2/alerts` → `severity` |
 | Patch compliance | Are we patched? | % + meter + pending / failed | `GET /v2/queries/os-patches`, `/v2/queries/os-patch-installs` |
-| Backups · 24 h | Did last night's backups run? | % + ok/total + delta | `GET /v2/backup/jobs` (only if NinjaOne Backup is used) |
+| Backups · 24 h | Did last night's backups run? | % + ok/total + delta | `GET /v2/backup/jobs`. If the account has no NinjaOne Backup jobs, this tile becomes **Low disk space** (volumes > 90 % full, from `GET /v2/queries/volumes`) |
 | Pending reboots | What is waiting on a restart? | Count + overdue count | device health / pending-reboot fields |
 | Antivirus | Is everything protected? | protected / total + threats | `GET /v2/queries/antivirus-status`, `/v2/queries/antivirus-threats` |
 | Alerts · 24 h | Is today normal? | Stacked columns, critical on the baseline | alerts + our own history (the API has no alert history) |
@@ -61,7 +61,9 @@ Light theme: [`preview/dashboard-light.png`](preview/dashboard-light.png). The l
 ### Visual system
 
 - **Font:** Inter (self-hosted on the mini PC so it works offline), tabular figures only in columns and axes.
-- **Surfaces:** page `#0b0c0e`, cards `#16181c`, 18 px radius, hairline borders. The light theme is in the same file.
+- **Surfaces:** page `#0b0c0e`, cards `#16181c`, 18 px radius, hairline borders.
+- **Themes:** light and dark switch automatically (`THEME=auto`: light 07:00–19:00, dark otherwise; times configurable). `THEME=dark` / `light` pins one.
+- **Screen:** 1080p TV, not OLED, so a static layout is fine and no burn-in protection is needed. Set the TV's picture size to *Just Scan* / *Screen Fit* / *PC mode*. Otherwise overscan crops the edges.
 - **Status colours, used for nothing else:** critical `#d03b3b`, major `#ec835a`, minor/warning `#fab219`, good `#0ca30c`. They always appear with an icon or a word, never colour alone.
 - **Category colours (device types):** blue, orange, aqua, yellow, magenta, in that fixed order. Checked for colour-blind separation in both themes.
 - **Charts:** thin bars (≤ 22 px), a 4 px rounded top, a 2 px gap between stacked parts, hairline grid, and a label only on the peak.
@@ -69,10 +71,10 @@ Light theme: [`preview/dashboard-light.png`](preview/dashboard-light.png). The l
 ## 3. Architecture
 
 ```
-NinjaOne cloud API  (OAuth2 client-credentials, read-only "monitoring" scope)
+NinjaOne cloud API  eu.ninjarmm.com  (OAuth2 client-credentials, read-only "monitoring" scope)
         │  HTTPS, polled
         ▼
-┌─────────────────────── MSI mini PC ─────────────────────────────┐
+┌──────────────── MSI mini PC · CachyOS · 4 GB RAM ───────────────┐
 │  ninjadash-backend (Python 3 · FastAPI · httpx, systemd)        │
 │   ├─ poller: alerts/devices every 60 s, patches/AV/backups 10 m │
 │   ├─ SQLite: hourly snapshots → sparklines, "vs yesterday"      │
@@ -90,7 +92,7 @@ Why this stack:
 - **Secrets stay server-side.** The NinjaOne client secret never reaches the browser.
 - **One poller, not one per browser.** This keeps us well under API rate limits, even if a second screen or a laptop also opens the page.
 - **History is ours.** NinjaOne's API returns current state. Sparklines and "vs yesterday" need our own small snapshot DB.
-- **Light enough for an old Celeron/Atom with 4 GB RAM.** Debian minimal + cage + Chromium idles at around 400 MB. Firefox kiosk is the fallback if Chromium is too heavy.
+- **Fits in 4 GB on CachyOS.** No desktop session: autologin on tty1 starts `cage` + Chromium directly, which idles at around 400–600 MB for one static page. If a desktop (KDE/SDDM) was installed, the display manager gets disabled so it doesn't hold RAM. The backend is about 60 MB. Everything comes from the normal Arch/CachyOS repos (`cage`, `chromium`, `python`), and the backend runs in its own venv so pacman's Python stays untouched. Firefox kiosk is the fallback if Chromium is too heavy.
 
 ## 4. Phases
 
@@ -100,8 +102,8 @@ Why this stack:
 | 1 | **API spike** | Create a NinjaOne API client (machine-to-machine, `monitoring` scope). Write a script that dumps real responses to `cache/samples/`. Confirm every field in the §2 table. |
 | 2 | **Backend** | Token handling + refresh, poller, SQLite history, `/api/summary`, `/healthz`, retries with backoff |
 | 3 | **Frontend** | Turn the mockup into `frontend/` and fetch `/api/summary` every 30 s. Add stale-data banner, empty and error states, auto light/dark by time of day |
-| 4 | **Kiosk** | Install guide for the mini PC (Debian 13 minimal), systemd units, autologin, screen off at night (`wlr-randr` / HDMI-CEC), auto-reboot weekly |
-| 5 | **Polish** (optional) | A second rotating page (per-organisation detail), a 1 px pixel shift against burn-in, and a sound or flash on a new critical alert |
+| 4 | **Kiosk** | Install script for CachyOS (`pacman -S cage chromium python`), `ninjadash` system user + venv, systemd units, tty1 autologin into cage, screen off outside office hours (`wlr-randr` / HDMI-CEC), auto-reboot weekly |
+| 5 | **Polish** (optional) | A second rotating page (per-organisation detail) and a flash on a new critical alert |
 
 ## 5. Folder layout
 
@@ -113,10 +115,13 @@ config/         .env.example (real .env is gitignored)
 docs/           This plan, mockup, preview images
 ```
 
-## 6. Open questions (answers change the build)
+## 6. Decisions (2026-11-03)
 
-1. **Which NinjaOne region** is your instance on: `app` (US), `eu`, `ca`, `oc` or `us2`?
-2. **Which screen**? 1080p TV, 4K, or a portrait monitor? The layout is 1080p-first and scales up cleanly.
-3. **Do you use NinjaOne Backup and Ticketing?** If not, the Backups tile becomes something else (for example, open tickets or disk-space warnings).
-4. **Exact mini PC model / CPU / RAM.** This decides Chromium vs Firefox and the OS image.
-5. **Dark only, or switch to light during office hours?**
+| Question | Answer | Effect on the build |
+|---|---|---|
+| NinjaOne region | **EU** | `NINJA_HOST=eu.ninjarmm.com`; the token URL is `https://eu.ninjarmm.com/ws/oauth/token` |
+| Screen | **1080p TV, not OLED** | Layout stays exactly 1920 × 1080. No burn-in measures |
+| Ticketing | **Not used** | No ticket panel or API calls |
+| Backup | *Not answered yet* | Auto-detected: no NinjaOne Backup jobs → the tile shows **Low disk space** instead |
+| Mini PC | **4 GB RAM, CachyOS** | No desktop session, cage + Chromium on tty1, pacman packages, backend in a venv |
+| Theme | **Light and dark** | `THEME=auto`, light 07:00–19:00 |
