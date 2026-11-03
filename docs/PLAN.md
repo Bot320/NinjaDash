@@ -152,10 +152,10 @@ NinjaOne API  eu.ninjarmm.com  (OAuth2 client-credentials, read-only "monitoring
 | # | Phase | Output | Status |
 |---|---|---|---|
 | 0 | **Plan + design** | Folders, this plan, mockup, demo, preview images | Done |
-| 1 | **API check** | `ninjadash check` logs in and shows which §3 sources have data in your account, plus alerts no rule sorts yet | Built; needs a run against the real account |
+| 1 | **API check** | `ninjadash check` logs in and shows which §3 sources have data in your account, plus alerts no rule sorts yet | Built; waiting for the API client from the NinjaOne admin |
 | 2 | **Backend** | Token handling, poller, alert classifier, server/workstation split, SQLite trend, `/api/summary`, `/healthz` | Built; tested against a fake NinjaOne API |
 | 3 | **Frontend** | Live data every 30 s, stale-data warning, example data until configured, automatic light/dark | Built |
-| 4 | **Kiosk** | `deploy/install.sh` for CachyOS, systemd services, cage + Chromium on tty1 | Built; not yet run on the mini PC |
+| 4 | **Kiosk** | `deploy/install.sh` for CachyOS, systemd services, cage + Chromium on tty1 | Installed on the mini PC (2026-11-03) with Home Assistant switch and RDP (XFCE) |
 | 5 | **Polish** (optional) | Screen off outside office hours, weekly reboot, a per-organisation page that rotates in | Later (new critical servers already flash) |
 
 ## 6. Decisions

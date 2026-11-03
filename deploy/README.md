@@ -2,21 +2,18 @@
 
 ## 1. Get the files onto the mini PC
 
-Pick one:
-
-- **USB stick:** copy `ninjadash-0.2.1.tar.gz` onto it, plug it into the mini PC, copy it to your home folder.
-- **Over the network** (from the PC that has the file; replace `user` and `minipc` with the mini PC's login and name or IP):
-  ```
-  scp ninjadash-0.2.1.tar.gz user@minipc:
-  ```
-- **From GitHub** (the repo is private, so the mini PC needs a GitHub login): `git clone https://github.com/Bot320/NinjaDash.git`
-
-Then unpack it on the mini PC:
+The easiest way is straight from GitHub (the repo is public, no login needed), on the mini PC:
 
 ```
-tar xzf ninjadash-0.2.1.tar.gz
-cd ninjadash-0.2.1
+curl -L -o ninjadash.tar.gz https://github.com/Bot320/NinjaDash/archive/refs/heads/main.tar.gz
+tar xzf ninjadash.tar.gz
+cd NinjaDash-main
 ```
+
+Without internet on the mini PC: build a bundle elsewhere with `bash deploy/make-bundle.sh` and copy
+`dist/ninjadash-<version>.tar.gz` over by USB stick or `scp`, then `tar xzf` it and `cd` into the folder.
+
+The commands below use `sudo bash deploy/…`. That works even if a download lost the executable flags.
 
 ## 2. Install
 
@@ -24,9 +21,9 @@ Choose how the screen should work:
 
 | Command | What you get |
 |---|---|
-| `sudo ./deploy/install.sh` | **Kiosk (recommended):** at boot the TV shows only the dashboard, full screen. No desktop runs, which saves memory on 4 GB. If a desktop login screen (e.g. SDDM) is enabled, the script asks before disabling it. |
-| `sudo ./deploy/install.sh --desktop yourname` | Keeps your desktop. The dashboard opens full screen when `yourname` logs in. Alt+F4 closes it. |
-| `sudo ./deploy/install.sh --backend-only` | Only the dashboard service. Open `http://localhost:8080` in any browser yourself. Good for a first test. |
+| `sudo bash deploy/install.sh` | **Kiosk (recommended):** at boot the TV shows only the dashboard, full screen. No desktop runs, which saves memory on 4 GB. If a desktop login screen (e.g. SDDM) is enabled, the script asks before disabling it. |
+| `sudo bash deploy/install.sh --desktop yourname` | Keeps your desktop. The dashboard opens full screen when `yourname` logs in. Alt+F4 closes it. |
+| `sudo bash deploy/install.sh --backend-only` | Only the dashboard service. Open `http://localhost:8080` in any browser yourself. Good for a first test. |
 
 Add `--home-assistant` to any of these to let Home Assistant switch the screen (see below).
 
@@ -72,7 +69,7 @@ started whenever you need it (see below). Every reboot goes back to the dashboar
 Install (or re-run the installer) with `--home-assistant`, or answer "yes" when it asks:
 
 ```
-sudo ./deploy/install.sh --home-assistant
+sudo bash deploy/install.sh --home-assistant
 sudo ninjadash home-assistant        # prints the YAML for Home Assistant, incl. IP and token
 ```
 
@@ -95,7 +92,7 @@ How it works:
 ## Remote Desktop (RDP) for maintenance
 
 ```
-sudo /opt/ninjadash/deploy/setup-rdp.sh
+sudo bash /opt/ninjadash/deploy/setup-rdp.sh
 ```
 
 This installs `xrdp` (from the AUR, via paru or yay) and a small **XFCE** desktop. Connect with any RDP
@@ -149,8 +146,8 @@ The file has examples for Veeam, Synology and pinning devices to the server pane
 ## Remove
 
 ```
-sudo /opt/ninjadash/deploy/uninstall.sh            # keeps settings
-sudo /opt/ninjadash/deploy/uninstall.sh --purge    # removes everything
+sudo bash /opt/ninjadash/deploy/uninstall.sh            # keeps settings
+sudo bash /opt/ninjadash/deploy/uninstall.sh --purge    # removes everything
 ```
 If the installer disabled your desktop login screen, the uninstaller turns it back on.
 
