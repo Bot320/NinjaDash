@@ -1,0 +1,31 @@
+# Your own NinjaDash rules. They are tried BEFORE the built-in ones
+# (/opt/ninjadash/backend/classify.toml). After editing: sudo ninjadash restart
+#
+# `sudo ninjadash check` lists alerts that match no rule yet, which is a good place to start.
+# Matching is case-insensitive:
+#   condition = glob patterns for the alert's condition name in NinjaOne
+#   text      = words or phrases in the alert's subject or message
+#   device    = glob patterns for device names
+# category = "hardware" | "backup" | "antivirus" | "other"; severity (optional) = "critical" | "warning" | "minor"
+
+# Example: your Veeam condition is called "VBR job result"
+# [[rule]]
+# name      = "Veeam jobs"
+# condition = ["VBR job result*"]
+# category  = "backup"
+
+# Example: Synology alerts via SNMP, always critical
+# [[rule]]
+# name      = "Synology disks"
+# condition = ["*synology*"]
+# text      = ["crashed", "degraded", "drive failed"]
+# category  = "hardware"
+# severity  = "critical"
+
+# Example: always show NAS boxes and firewalls with the servers
+# [tiers]
+# server_names = ["NAS-*", "FW-*"]
+
+# Example: show every "other" server alert, not just critical ones
+# [display]
+# other_min_severity = "warning"

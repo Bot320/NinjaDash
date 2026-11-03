@@ -1,0 +1,32 @@
+[Unit]
+Description=NinjaDash kiosk (cage + Chromium full screen on tty1)
+Documentation=file:///opt/ninjadash/deploy/README.md
+After=systemd-user-sessions.service ninjadash.service network-online.target
+Wants=ninjadash.service
+ConditionPathExists=/dev/tty0
+# Takes over the first console instead of a login prompt.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=ninjadash-kiosk
+PAMName=ninjadash-kiosk
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=wayland
+Environment=NINJADASH_URL=http://127.0.0.1:8080/
+# -s lets Ctrl+Alt+F2 switch to a text console for maintenance.
+ExecStart=/usr/bin/cage -s -- /opt/ninjadash/deploy/kiosk/kiosk.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

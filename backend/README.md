@@ -1,11 +1,18 @@
 # backend
 
-Python 3 · FastAPI · httpx. Planned modules in `app/`:
+Python 3.11+, standard library only (no pip installs). Run with `PYTHONPATH=backend python3 -m ninjadash`.
 
-- `config.py`: loads settings from `$NINJADASH_ENV`, `/etc/ninjadash/ninjadash.env` or `~/.config/ninjadash/ninjadash.env`, never from the repo
-- `ninja.py`: OAuth2 client-credentials token + calls to the NinjaOne v2 API (EU)
-- `poller.py`: fast loop (alerts, online state) and slow loop (antivirus, RAID, backup)
-- `classify.py`: maps each alert to hardware / backup / antivirus and to critical / warning / minor (rules in `classify.yaml`)
-- `history.py`: SQLite daily incident counts for the 14-day trend
-- `summary.py`: builds `/api/summary` (same shape as `DATA` in `docs/mockup/index.html`), servers first
-- `main.py`: FastAPI app, serves `../frontend` statically, plus `/api/summary` and `/healthz`
+| Module | Does |
+|---|---|
+| `ninjadash/config.py` | Loads settings from `$NINJADASH_ENV`, `/etc/ninjadash/ninjadash.env` or `~/.config/ninjadash/ninjadash.env`; real environment variables override |
+| `ninjadash/ninja.py` | NinjaOne API v2 client: OAuth2 client credentials, retries on 429/5xx, paging |
+| `ninjadash/classify.py` | Server / workstation tier, alert category and severity, from `classify.toml` |
+| `ninjadash/summary.py` | Builds `/api/summary` from devices, alerts, antivirus and backup data |
+| `ninjadash/history.py` | SQLite "first seen" log for the 14-day trend |
+| `ninjadash/app.py` | Poller thread; falls back to example data without credentials |
+| `ninjadash/server.py` | Serves the frontend, `/api/summary` and `/healthz` |
+| `ninjadash/__main__.py` | `serve` (default) and `check` commands |
+| `classify.toml` | Built-in rules. Local additions go in `/etc/ninjadash/classify.toml` |
+
+Field names for the antivirus, backup and alert endpoints are read defensively (several known
+spellings). `ninjadash check --fields` prints what a real account returns, so the parser can be adjusted.

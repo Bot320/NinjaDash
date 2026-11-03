@@ -1,0 +1,36 @@
+[Unit]
+Description=NinjaDash backend (NinjaOne wall dashboard)
+Documentation=file:///opt/ninjadash/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ninjadash
+Group=ninjadash
+Environment=PYTHONPATH=/opt/ninjadash/backend
+Environment=NINJADASH_ENV=/etc/ninjadash/ninjadash.env
+Environment=NINJADASH_FRONTEND=/opt/ninjadash/frontend
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m ninjadash serve
+Restart=always
+RestartSec=5
+StateDirectory=ninjadash
+StateDirectoryMode=0750
+MemoryMax=300M
+
+# Read-only access to the system, no access to /home, no privilege changes.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

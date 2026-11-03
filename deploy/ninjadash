@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Command-line helper, installed as /usr/local/bin/ninjadash.
+#   sudo ninjadash check            test the NinjaOne connection, show what the dashboard sees
+#   sudo ninjadash check --fields   ... and list the field names NinjaOne returns
+#   sudo ninjadash status           service status and the last log lines
+#   sudo ninjadash restart          restart after editing /etc/ninjadash/*
+#   sudo ninjadash logs             follow the log
+#   sudo ninjadash edit             edit the settings (API client, theme, port)
+set -euo pipefail
+case "${1:-help}" in
+  check)
+    shift
+    exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV=/etc/ninjadash/ninjadash.env \
+      PYTHONDONTWRITEBYTECODE=1 python3 -m ninjadash check "$@" ;;
+  status)
+    systemctl --no-pager status ninjadash.service ninjadash-kiosk.service 2>/dev/null || true ;;
+  restart)
+    systemctl restart ninjadash.service
+    systemctl is-enabled --quiet ninjadash-kiosk.service 2>/dev/null && systemctl restart ninjadash-kiosk.service
+    echo "Restarted." ;;
+  logs)
+    exec journalctl -u ninjadash.service -u ninjadash-kiosk.service -f ;;
+  edit)
+    exec "${EDITOR:-nano}" /etc/ninjadash/ninjadash.env ;;
+  *)
+    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

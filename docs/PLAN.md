@@ -102,20 +102,24 @@ neither NinjaOne nor the dashboard can see it.
 | NAS drive or RAID failed (Synology, QNAP, …) | The NAS has no agent, so it's monitored through **NinjaOne network monitoring (SNMP)**, with an agent PC on the same LAN acting as the probe. SNMP conditions on the NAS's disk and RAID status values raise the alert | Hardware, on a server card |
 | Anything else (UPS on battery, temperature, a service down) | Any condition or script that raises an alert | Mapped by rule, or shown as "Other" |
 
-Sorting alerts into categories uses an editable rule file (`backend/classify.yaml`), for example:
+Sorting alerts into categories uses an editable rule file (`/etc/ninjadash/classify.toml`, on top of the built-in `backend/classify.toml`), for example:
 
-```yaml
-- match: { condition: "Veeam*" }            # condition name you gave it in NinjaOne
-  category: backup
-- match: { text: ["RAID", "disk failed", "drive failed", "SMART"] }
-  category: hardware
-- match: { device_class: NMS }              # SNMP devices such as NAS boxes and switches
-  tier: server                              # show them in the server panel
+```toml
+[[rule]]
+condition = ["Veeam*"]                      # condition name you gave it in NinjaOne
+category  = "backup"
+
+[[rule]]
+text      = ["raid", "drive failed", "s.m.a.r.t"]
+category  = "hardware"
+
+[tiers]
+server_classes = ["*SERVER*", "*_HOST", "NMS*"]   # SNMP devices (NAS, switches) count as servers
+server_names   = ["NAS-*", "FW-*"]
 ```
 
 Alerts that match no rule still show up, under "Other", so nothing gets lost. A device's NinjaOne
-**role** or **tag** can also override the tier: tag a NAS or a firewall as `ninjadash:server` and it
-appears with the servers.
+**name** can also pin the tier (`server_names`), so a NAS or firewall appears with the servers.
 
 ## 4. Architecture
 
@@ -124,7 +128,7 @@ NinjaOne API  eu.ninjarmm.com  (OAuth2 client-credentials, read-only "monitoring
         │  HTTPS, polled
         ▼
 ┌──────────────── MSI mini PC · CachyOS · 4 GB RAM ───────────────┐
-│  ninjadash-backend (Python 3 · FastAPI · httpx, systemd)        │
+│  ninjadash.service (Python 3, standard library only)            │
 │   ├─ reads secrets from /etc/ninjadash/ninjadash.env            │
 │   ├─ poller: alerts + devices every 60 s, AV/RAID/backup 5 min  │
 │   ├─ classifier: alert → hardware | backup | antivirus, sev     │
@@ -145,14 +149,14 @@ NinjaOne API  eu.ninjarmm.com  (OAuth2 client-credentials, read-only "monitoring
 
 ## 5. Phases
 
-| # | Phase | Output |
-|---|---|---|
-| 0 | **Plan + design** (this PR) | Folders, this plan, mockup, preview images |
-| 1 | **API check** | Using your API client, a script dumps real (anonymised) responses and shows which of the §3 sources have data in your account, especially hardware alerts and backup |
-| 2 | **Backend** | Token handling, poller, alert classifier (hardware / backup / antivirus), server/workstation split, SQLite trend, `/api/summary`, `/healthz` |
-| 3 | **Frontend** | Turn the mockup into `frontend/` with live data every 30 s, a stale-data warning, error states, and the automatic light/dark switch |
-| 4 | **Kiosk** | CachyOS install script, systemd units, tty1 autologin into cage, screen off outside office hours, weekly reboot |
-| 5 | **Polish** (optional) | Flash the server card when a new critical issue appears; a per-organisation detail page that rotates in |
+| # | Phase | Output | Status |
+|---|---|---|---|
+| 0 | **Plan + design** | Folders, this plan, mockup, demo, preview images | Done |
+| 1 | **API check** | `ninjadash check` logs in and shows which §3 sources have data in your account, plus alerts no rule sorts yet | Built; needs a run against the real account |
+| 2 | **Backend** | Token handling, poller, alert classifier, server/workstation split, SQLite trend, `/api/summary`, `/healthz` | Built; tested against a fake NinjaOne API |
+| 3 | **Frontend** | Live data every 30 s, stale-data warning, example data until configured, automatic light/dark | Built |
+| 4 | **Kiosk** | `deploy/install.sh` for CachyOS, systemd services, cage + Chromium on tty1 | Built; not yet run on the mini PC |
+| 5 | **Polish** (optional) | Screen off outside office hours, weekly reboot, a per-organisation page that rotates in | Later (new critical servers already flash) |
 
 ## 6. Decisions
 
