@@ -1,0 +1,62 @@
+# NinjaDash classification rules (built-in defaults).
+#
+# Don't edit this file on the mini PC. Edit /etc/ninjadash/classify.toml instead:
+# its [[rule]] entries are tried BEFORE these, and its [severity] / [tiers] / [display]
+# keys override the ones here. Then: sudo systemctl restart ninjadash
+#
+# Matching is case-insensitive.
+#   condition = glob patterns matched against the alert's condition/source name
+#   text      = words or phrases searched for in the alert's subject and message
+#   device    = glob patterns matched against the device name
+# The first matching rule wins. Alerts that match no rule are "other".
+
+[severity]                 # NinjaOne severity -> dashboard severity
+CRITICAL = "critical"
+MAJOR    = "critical"
+MODERATE = "warning"
+MINOR    = "minor"
+NONE     = "minor"
+
+[tiers]
+# Which devices count as servers (checked first), which as workstations.
+# Patterns match NinjaOne's nodeClass, e.g. WINDOWS_SERVER, LINUX_SERVER,
+# VMWARE_VM_HOST, HYPERV_VMM_HOST, WINDOWS_WORKSTATION, MAC, NMS_* (SNMP devices).
+server_classes      = ["*SERVER*", "*_HOST", "NMS*"]
+workstation_classes = ["*WORKSTATION*", "MAC", "MAC_*", "*DESKTOP*", "*LAPTOP*"]
+ignore_classes      = ["*_GUEST", "CLOUD_*", "*MOBILE*", "ANDROID*", "APPLE_IOS*", "APPLE_IPADOS*"]
+# Device-name overrides, e.g. ["NAS-*", "FW-*"] to always show those with the servers.
+server_names = []
+ignore_names = []
+
+[display]
+# "other" alerts (matching no rule) appear on server cards from this severity up.
+# Use "none" to hide them completely, "minor" to show all.
+other_min_severity     = "critical"
+offline_server_minutes = 15
+quarantine_hours       = 24      # quarantined threats stay visible this long
+backup_window_hours    = 24
+
+[[rule]]
+name      = "Backup software"
+condition = ["*veeam*", "*backup*", "*acronis*", "*datto*", "*replication*"]
+text      = ["veeam", "backup", "acronis", "datto", "wbadmin", "hyper backup", "replication job", "snapshot failed"]
+category  = "backup"
+
+[[rule]]
+name      = "Antivirus / threats"
+condition = ["*antivirus*", "*threat*", "*malware*", "*defender*", "*ransom*"]
+text      = ["threat", "malware", "virus", "antivirus", "ransom", "quarantin", "defender", "bitdefender",
+             "sentinelone", "sophos", "eset", "webroot", "trojan", "infection"]
+category  = "antivirus"
+
+[[rule]]
+name      = "Hardware"
+condition = ["*raid*", "*smart*", "*disk health*", "*hardware*", "*psu*", "*power supply*", "*fan*",
+             "*temperature*", "*whea*", "*nas*drive*", "*drive fail*"]
+text      = ["raid", "s.m.a.r.t", "smart status", "smart error", "smart failure", "smart attribute",
+             "smart:", "predictive failure", "predicted failure", "failure predicted", "drive failed",
+             "disk failed", "failed drive", "failed disk", "physical disk", "bad block", "bad sector",
+             "reallocated", "degraded", "power supply", "psu", "fan failure", "fan failed", "fan speed",
+             "overheat", "temperature", "whea", "ecc error", "memory error", "machine check",
+             "battery health", "controller error", "hardware error", "hardware failure", "volume offline"]
+category  = "hardware"
