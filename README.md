@@ -9,7 +9,7 @@ and **antivirus threats**. It shows which **servers** are affected first, then w
 ## Install on the mini PC (Arch / CachyOS)
 
 ```
-tar xzf ninjadash-0.2.0.tar.gz && cd ninjadash-0.2.0
+tar xzf ninjadash-0.2.1.tar.gz && cd ninjadash-0.2.1
 sudo ./deploy/install.sh --home-assistant
 sudo ninjadash edit                  # add the NinjaOne API client ID + secret
 sudo ninjadash check                 # test the connection

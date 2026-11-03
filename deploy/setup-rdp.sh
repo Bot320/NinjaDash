@@ -44,10 +44,12 @@ say "Installing xrdp + xorgxrdp from the AUR (this compiles, takes a few minutes
 if pacman -Q xrdp xorgxrdp &>/dev/null; then
   ok "xrdp and xorgxrdp are already installed"
 else
+  # --nocheck: xrdp 0.10.6.1's unit tests 7-10 (login-screen bitmap scaling, test_bitmap_load.c) fail
+  # with the current imlib2 on Arch. Known on the AUR page since 2026-09; xrdp itself works fine.
   if command -v paru >/dev/null; then
-    sudo -u "$RDP_USER" paru -S --needed --noconfirm --skipreview xrdp xorgxrdp
+    sudo -u "$RDP_USER" paru -S --needed --noconfirm --skipreview --nocheck xrdp xorgxrdp
   elif command -v yay >/dev/null; then
-    sudo -u "$RDP_USER" yay -S --needed --noconfirm --answerdiff None --answerclean None xrdp xorgxrdp
+    sudo -u "$RDP_USER" yay -S --needed --noconfirm --answerdiff None --answerclean None --mflags --nocheck xrdp xorgxrdp
   else
     die "No AUR helper found. Install one first: sudo pacman -S paru"
   fi

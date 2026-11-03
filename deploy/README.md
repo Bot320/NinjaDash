@@ -4,18 +4,18 @@
 
 Pick one:
 
-- **USB stick:** copy `ninjadash-0.2.0.tar.gz` onto it, plug it into the mini PC, copy it to your home folder.
+- **USB stick:** copy `ninjadash-0.2.1.tar.gz` onto it, plug it into the mini PC, copy it to your home folder.
 - **Over the network** (from the PC that has the file; replace `user` and `minipc` with the mini PC's login and name or IP):
   ```
-  scp ninjadash-0.2.0.tar.gz user@minipc:
+  scp ninjadash-0.2.1.tar.gz user@minipc:
   ```
 - **From GitHub** (the repo is private, so the mini PC needs a GitHub login): `git clone https://github.com/Bot320/NinjaDash.git`
 
 Then unpack it on the mini PC:
 
 ```
-tar xzf ninjadash-0.2.0.tar.gz
-cd ninjadash-0.2.0
+tar xzf ninjadash-0.2.1.tar.gz
+cd ninjadash-0.2.1
 ```
 
 ## 2. Install
