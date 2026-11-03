@@ -90,6 +90,33 @@ Affected servers are always shown in full.
 | Organisation names | `GET /organizations` | |
 | 14-day trend | our own SQLite history | NinjaOne only returns the current state, so the backend stores daily counts itself |
 
+### Custom alerts (Veeam, NAS, anything else)
+
+The dashboard shows **every active alert NinjaOne raises**, including alerts from conditions you
+built yourself. The one rule: NinjaOne has to raise the alert. If no condition watches for a problem,
+neither NinjaOne nor the dashboard can see it.
+
+| Example | How NinjaOne sees it | Dashboard category |
+|---|---|---|
+| Veeam backup job failed | *Windows Event Log* condition on the Veeam server: source **Veeam MP** / log **Veeam Backup**, job-finished events whose text contains "Failed" or "Warning" (event IDs to confirm on your Veeam version), or a script condition that checks the last job result | Backup |
+| NAS drive or RAID failed (Synology, QNAP, …) | The NAS has no agent, so it's monitored through **NinjaOne network monitoring (SNMP)**, with an agent PC on the same LAN acting as the probe. SNMP conditions on the NAS's disk and RAID status values raise the alert | Hardware, on a server card |
+| Anything else (UPS on battery, temperature, a service down) | Any condition or script that raises an alert | Mapped by rule, or shown as "Other" |
+
+Sorting alerts into categories uses an editable rule file (`backend/classify.yaml`), for example:
+
+```yaml
+- match: { condition: "Veeam*" }            # condition name you gave it in NinjaOne
+  category: backup
+- match: { text: ["RAID", "disk failed", "drive failed", "SMART"] }
+  category: hardware
+- match: { device_class: NMS }              # SNMP devices such as NAS boxes and switches
+  tier: server                              # show them in the server panel
+```
+
+Alerts that match no rule still show up, under "Other", so nothing gets lost. A device's NinjaOne
+**role** or **tag** can also override the tier: tag a NAS or a firewall as `ninjadash:server` and it
+appears with the servers.
+
 ## 4. Architecture
 
 ```
