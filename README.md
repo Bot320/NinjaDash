@@ -24,7 +24,7 @@ On the mini PC (Arch Linux / CachyOS), in a terminal, from your normal user acco
 ### Install or update: one command
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
 ```
 
 This downloads the newest version to `~/ninjadash-src` and runs the installer. For an update that's all:
@@ -33,13 +33,13 @@ your settings, token, rules and Home Assistant setup are kept. Then `sudo reboot
 The first install, with the Home Assistant screen switch:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --home-assistant
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --home-assistant
 ```
 
 Test a branch (e.g. from a pull request) instead of `main`:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --branch fix/kiosk-polish
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --branch fix/kiosk-polish
 ```
 
 > **Copy and paste:** on GitHub, every grey box has a **copy button** in its top-right corner.
@@ -291,7 +291,7 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 ## Update
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
 sudo reboot
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Downloads NinjaDash from GitHub and installs or updates it. Short enough to type by hand:
 #
-#   curl -sL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
 #
 # Options go after `bash -s --`:
 #   ... | bash -s -- --home-assistant          any install.sh option (first install)
