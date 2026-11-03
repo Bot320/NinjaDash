@@ -10,7 +10,7 @@ systemctl disable --now ninjadash-kiosk.service ninjadash.service 2>/dev/null ||
 rm -f /etc/systemd/system/ninjadash.service /etc/systemd/system/ninjadash-kiosk.service \
       /etc/pam.d/ninjadash-kiosk /usr/local/bin/ninjadash
 systemctl daemon-reload
-rm -rf /opt/ninjadash
+rm -rf /opt/ninjadash /usr/share/icons/ninjadash-blank
 for home in /home/*; do rm -f "$home/.config/autostart/ninjadash.desktop"; done
 
 if [[ -f /etc/ninjadash/.disabled-display-manager ]]; then

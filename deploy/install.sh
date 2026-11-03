@@ -167,6 +167,8 @@ case $MODE in
     fi
     for g in video render input; do getent group "$g" >/dev/null && usermod -aG "$g" ninjadash-kiosk; done
     install -m 644 "$SRC/deploy/pam/ninjadash-kiosk" /etc/pam.d/ninjadash-kiosk
+    python3 "$SRC/deploy/kiosk/blank-cursor.py" /usr/share/icons/ninjadash-blank >/dev/null
+    ok "Mouse pointer hidden on the kiosk screen"
     sed "s#^Environment=NINJADASH_URL=.*#Environment=NINJADASH_URL=$URL#" \
       "$SRC/deploy/systemd/ninjadash-kiosk.service" > /etc/systemd/system/ninjadash-kiosk.service
     chmod 644 /etc/systemd/system/ninjadash-kiosk.service

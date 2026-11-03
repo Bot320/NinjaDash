@@ -16,8 +16,13 @@ done
 PROFILE="${HOME:-/tmp}/.ninjadash-chromium"
 mkdir -p "$PROFILE"
 
+# English browser UI and page language, so Chromium never offers to translate the (English) dashboard
+# on a German system. LANGUAGE only affects Chromium here, not the rest of the PC.
+export LANGUAGE=en
+
 exec chromium \
   --kiosk "$URL" \
+  --accept-lang=en-US,en \
   --incognito \
   --user-data-dir="$PROFILE" \
   --no-first-run \

@@ -22,6 +22,19 @@ dm()     {
          systemctl cat "$d.service" &>/dev/null && { echo "$d.service"; return; }; done
   fi
 }
+greeter_vt() {  # wait up to $1 s for the login screen's session; print its console number
+  local i s
+  for ((i = 0; i < $1; i++)); do
+    for s in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+      if [[ $(loginctl show-session "$s" -p Class --value 2>/dev/null) == greeter ]]; then
+        local vt; vt=$(loginctl show-session "$s" -p VTNr --value 2>/dev/null)
+        [[ -n $vt && $vt != 0 ]] && { echo "$vt"; return 0; }
+      fi
+    done
+    sleep 1
+  done
+  return 1
+}
 need_root() { [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo ninjadash $*"; exit 1; }; }
 
 case "${1:-help}" in
@@ -53,12 +66,24 @@ case "${1:-help}" in
     need_root desktop
     d=$(dm); [[ -n $d ]] || { echo "No desktop login manager found (e.g. sddm). Install KDE first."; exit 1; }
     systemctl stop ninjadash-kiosk.service || true
-    systemctl start "$d"
-    echo "The TV now shows the $d login screen. Back to the dashboard: sudo ninjadash kiosk (or reboot)." ;;
+    systemctl stop getty@tty1.service 2>/dev/null || true     # no text login on the TV's console
+    systemctl reset-failed "$d" 2>/dev/null || true
+    systemctl start "$d" || true
+    # The login screen doesn't always start on console 1: find its console and show it on the TV.
+    vt=$(greeter_vt 20) || vt=""
+    if [[ -n $vt ]]; then
+      chvt "$vt"
+      echo "The TV now shows the $d login screen (console $vt). Back to the dashboard: sudo ninjadash kiosk (or reboot)."
+    elif systemctl is-active --quiet "$d"; then
+      echo "$d is running, but its login screen wasn't found. Press Ctrl+Alt+F1 … F7 at the mini PC to find it."
+    else
+      echo "$d did not start. Its log:"; journalctl -u "$d" -b -n 25 --no-pager; exit 1
+    fi ;;
   kiosk)
     need_root kiosk
     d=$(dm); [[ -n $d ]] && systemctl stop "$d" 2>/dev/null || true
     systemctl start ninjadash-kiosk.service
+    sleep 1; chvt 1 2>/dev/null || true
     echo "The TV shows the dashboard again." ;;
   home-assistant|ha)
     need_root home-assistant

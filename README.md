@@ -279,6 +279,8 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | Home Assistant switch does nothing | `ninjadash screen status` (is `agent` true?), check the IP/token in HA, firewall port 8080 |
 | TV stays in standby after "on" | The TV doesn't wake on signal: control the TV from HA directly or use HDMI-CEC |
 | Picture edges cut off | Set the TV's picture size to *Just Scan* / *Screen Fit* / *PC* |
+| Mouse pointer or a Chromium "Translate" popup on the TV | Update to 0.2.2 or newer and reboot (invisible pointer theme, English browser UI) |
+| `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |
 | RDP: black screen / disconnects | `paru -S --rebuild --nocheck xorgxrdp`, then `sudo systemctl restart xrdp xrdp-sesman` |
 

@@ -22,6 +22,9 @@ StandardError=journal
 UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_SESSION_TYPE=wayland
+# Invisible mouse pointer from the first frame (theme written by install.sh)
+Environment=XCURSOR_THEME=ninjadash-blank
+Environment=XCURSOR_SIZE=24
 Environment=NINJADASH_URL=http://127.0.0.1:8080/
 # -s lets Ctrl+Alt+F2 switch to a text console for maintenance.
 ExecStart=/usr/bin/cage -s -- /opt/ninjadash/deploy/kiosk/kiosk.sh
