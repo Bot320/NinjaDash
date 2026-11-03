@@ -72,9 +72,48 @@ AV_STATUS = [
 ]
 
 
+GB = 1024 ** 3
+OS_PATCHES = [
+    {"deviceId": 1, "name": "2026-11 Cumulative Update for Windows Server 2022", "severity": "CRITICAL", "status": "MANUAL"},
+    {"deviceId": 3, "name": "2026-11 Cumulative Update for Windows Server 2022", "severity": "CRITICAL", "status": "MANUAL"},
+    {"deviceId": 20, "name": "2026-11 Cumulative Update for Windows 11", "severity": "CRITICAL", "status": "PENDING"},
+    {"deviceId": 21, "name": "2026-11 Cumulative Update for Windows 11", "severity": "CRITICAL", "status": "PENDING"},
+    {"deviceId": 22, "name": "2026-11 Cumulative Update for Windows 11", "severity": "CRITICAL", "status": "APPROVED"},
+    {"deviceId": 23, "name": "Old driver", "severity": "OPTIONAL", "status": "REJECTED"},
+    {"deviceId": 20, "name": ".NET Framework update", "severity": "IMPORTANT", "status": "FAILED"},
+]
+SW_PATCHES = [
+    {"deviceId": 20, "title": "Google Chrome 156", "impact": "critical", "status": "PENDING"},
+    {"deviceId": 21, "title": "Google Chrome 156", "impact": "critical", "status": "PENDING"},
+    {"deviceId": 2, "title": "7-Zip 26.00", "impact": "moderate", "status": "PENDING"},
+    {"deviceId": 22, "title": "Zoom 7", "impact": "low", "status": "APPROVED"},
+]
+VOLUMES = [
+    {"deviceId": 1, "name": "D:\\", "label": "Data", "capacity": 2000 * GB, "freeSpace": 70 * GB},      # 96.5 % -> critical
+    {"deviceId": 9, "name": "C:\\", "label": "", "capacity": 100 * GB, "freeSpace": 9 * GB},            # 91 % -> warning
+    {"deviceId": 1, "name": "C:\\", "label": "", "capacity": 120 * GB, "freeSpace": 60 * GB},           # fine
+    {"deviceId": 3, "name": "\\\\?\\Volume{x}", "label": "Recovery", "capacity": 1 * GB, "freeSpace": 0.05 * GB},  # ignored
+    {"deviceId": 20, "name": "C:\\", "label": "", "capacity": 240 * GB, "freeSpace": 20 * GB},          # 91.7 % workstation
+    {"deviceId": 21, "name": "E:\\", "label": "USB", "deviceType": "Removable Disk", "capacity": 64 * GB, "freeSpace": 1 * GB},  # ignored
+]
+REQUESTS: list = []          # (method, path) of every request, for the read-only test
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
+
+    def _record(self):
+        REQUESTS.append((self.command, urlparse(self.path).path))
+
+    def do_PUT(self):
+        self._record(); self._json(405, {})
+
+    def do_PATCH(self):
+        self._record(); self._json(405, {})
+
+    def do_DELETE(self):
+        self._record(); self._json(405, {})
 
     def _json(self, code, body):
         raw = json.dumps(body).encode()
@@ -85,6 +124,7 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_POST(self):
+        self._record()
         if self.path == "/ws/oauth/token":
             length = int(self.headers.get("Content-Length", 0))
             form = parse_qs(self.rfile.read(length).decode())
@@ -94,6 +134,7 @@ class H(BaseHTTPRequestHandler):
         self._json(404, {})
 
     def do_GET(self):
+        self._record()
         if self.headers.get("Authorization") != "Bearer tok":
             return self._json(401, {"error": "unauthorized"})
         u = urlparse(self.path)
@@ -112,6 +153,12 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, {"cursor": None, "results": AV_STATUS})
         if u.path == "/v2/backup/jobs":
             return self._json(404, {"error": "Not licensed"})
+        if u.path == "/v2/queries/os-patches":
+            return self._json(200, {"cursor": None, "results": OS_PATCHES})
+        if u.path == "/v2/queries/software-patches":
+            return self._json(200, {"cursor": None, "results": SW_PATCHES})
+        if u.path == "/v2/queries/volumes":
+            return self._json(200, {"cursor": None, "results": VOLUMES})
         return self._json(404, {"error": "not found"})
 
 

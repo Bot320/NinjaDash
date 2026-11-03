@@ -1,4 +1,11 @@
-"""Minimal NinjaOne public API (v2) client: OAuth2 client credentials, retries, paging. Stdlib only."""
+"""Minimal NinjaOne public API (v2) client: OAuth2 client credentials, retries, paging. Stdlib only.
+
+READ-ONLY BY DESIGN. NinjaDash never changes anything in NinjaOne:
+- The login always asks for the "monitoring" scope only (read access). It can't be configured.
+- The only request that isn't a GET is the login itself (POST /ws/oauth/token).
+- `get()` is the only way to call the API, and it refuses anything outside /v2/.
+tests/test_readonly.py runs a full sync against a fake API and fails if any other request is sent.
+"""
 from __future__ import annotations
 
 import json
@@ -9,7 +16,8 @@ import urllib.parse
 import urllib.request
 
 log = logging.getLogger("ninjadash.api")
-USER_AGENT = "NinjaDash/0.2 (+wall dashboard; read-only)"
+USER_AGENT = "NinjaDash/0.3 (+wall dashboard; read-only)"
+READ_ONLY_SCOPE = "monitoring"
 
 
 class NinjaError(Exception):
@@ -19,11 +27,13 @@ class NinjaError(Exception):
 
 
 class NinjaClient:
-    def __init__(self, base_url: str, client_id: str, client_secret: str, scope: str = "monitoring", timeout: int = 30):
+    def __init__(self, base_url: str, client_id: str, client_secret: str, scope: str = READ_ONLY_SCOPE, timeout: int = 30):
         self.base = base_url.rstrip("/")
         self.client_id = client_id
         self.client_secret = client_secret
-        self.scope = scope
+        if scope != READ_ONLY_SCOPE:
+            log.warning("Ignoring scope %r: NinjaDash only ever asks for the read-only %r scope", scope, READ_ONLY_SCOPE)
+        self.scope = READ_ONLY_SCOPE
         self.timeout = timeout
         self._token: str | None = None
         self._token_expires = 0.0
@@ -61,6 +71,9 @@ class NinjaClient:
 
     # ---- requests ---------------------------------------------------------
     def get(self, path: str, params: dict | None = None):
+        """The only way NinjaDash talks to the API: plain GET requests below /v2/ (read-only)."""
+        if not path.startswith("/v2/") or ".." in path:
+            raise ValueError(f"Refusing to call {path!r}: NinjaDash only reads from /v2/")
         url = self.base + path
         if params:
             url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
@@ -141,6 +154,8 @@ def _read_error(e: urllib.error.HTTPError) -> str:
         body = e.read().decode("utf-8", "replace")[:300]
     except Exception:
         body = ""
+    finally:
+        e.close()
     try:
         j = json.loads(body)
         return j.get("error_description") or j.get("error") or j.get("message") or body

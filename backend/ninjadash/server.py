@@ -1,13 +1,14 @@
-"""HTTP server: the dashboard page, /api/summary, /api/screen and /healthz. Stdlib only.
+"""HTTP server: the dashboard page, /api/summary, /api/screen, /api/theme and /healthz. Stdlib only.
 
 Access rules
 - This PC (127.0.0.1 / ::1): everything. The kiosk browser and the screen agent use this.
 - Other PCs, depending on REMOTE_ACCESS:
     none   -> nothing
-    screen -> only /api/screen (default; for Home Assistant)
+    screen -> only the switches /api/screen and /api/theme (default; for Home Assistant)
     all    -> also the dashboard itself (read-only)
-- Changing the screen from another PC always needs `Authorization: Bearer <SCREEN_TOKEN>`
-  (or ?token=...). Reading the screen state from another PC needs it too.
+- Using a switch from another PC always needs `Authorization: Bearer <SCREEN_TOKEN>`
+  (or ?token=...), for reading its state too.
+These switches only change the TV. Nothing here writes to NinjaOne.
 """
 from __future__ import annotations
 
@@ -23,6 +24,8 @@ from urllib.parse import parse_qs, urlparse
 
 log = logging.getLogger("ninjadash.http")
 SCREEN_PATHS = ("/api/screen", "/api/screen/on", "/api/screen/off", "/api/screen/toggle")
+THEME_PATHS = ("/api/theme", "/api/theme/light", "/api/theme/dark", "/api/theme/auto", "/api/theme/toggle")
+CONTROL_PATHS = SCREEN_PATHS + THEME_PATHS
 
 
 def is_local(ip: str) -> bool:
@@ -49,14 +52,14 @@ def token_ok(expected: str, auth_header: str | None, query_token: str | None) ->
 def check_access(path: str, method: str, local: bool, remote_access: str, expected_token: str,
                  auth_header: str | None, query_token: str | None) -> tuple[int, str]:
     """Returns (status, message); 200 means allowed."""
-    screen = path in SCREEN_PATHS
+    control = path in CONTROL_PATHS
     if local:
         return 200, ""
     if remote_access == "none":
         return 403, "Access from other computers is switched off (REMOTE_ACCESS=none)."
-    if not screen and remote_access != "all":
-        return 403, "Only /api/screen is available from other computers (REMOTE_ACCESS=screen)."
-    if screen:
+    if not control and remote_access != "all":
+        return 403, "Only /api/screen and /api/theme are available from other computers (REMOTE_ACCESS=screen)."
+    if control:
         if not expected_token:
             return 403, "Screen control is not set up: SCREEN_TOKEN is empty."
         if not token_ok(expected_token, auth_header, query_token):
@@ -112,8 +115,10 @@ def make_handler(app, frontend: Path):
                 if "agent" in query and is_local(self.client_address[0]):
                     app.screen_agent_seen = time.time()
                 return self._json(200, app.screen())
-            if path in SCREEN_PATHS:
-                return self._json(405, {"error": "Use POST to switch the screen."})
+            if path == "/api/theme":
+                return self._json(200, app.theme())
+            if path in CONTROL_PATHS:
+                return self._json(405, {"error": "Use POST to switch."})
             if path == "/healthz":
                 ok = app.healthy()
                 return self._json(200 if ok else 503, {"ok": ok, "lastSuccess": app.last_success, "error": app.error, "demo": app.demo})
@@ -124,9 +129,10 @@ def make_handler(app, frontend: Path):
             path, query = u.path, parse_qs(u.query)
             if not self._gate(path, query):
                 return
-            if path not in SCREEN_PATHS:
+            if path not in CONTROL_PATHS:
                 return self._json(404, {"error": "Not found"})
-            want = path.rsplit("/", 1)[-1] if path != "/api/screen" else None
+            is_theme = path in THEME_PATHS
+            want = path.rsplit("/", 1)[-1] if path not in ("/api/screen", "/api/theme") else None
             if want is None:
                 length = min(int(self.headers.get("Content-Length") or 0), 4096)
                 raw = self.rfile.read(length).decode("utf-8", "replace") if length else ""
@@ -136,11 +142,11 @@ def make_handler(app, frontend: Path):
                     body = {}
                 if not body and raw:
                     body = {k: v[0] for k, v in parse_qs(raw).items()}
-                want = body.get("state", (query.get("state") or [""])[0])
+                want = body.get("mode", body.get("state", (query.get("mode") or query.get("state") or [""])[0]))
                 if isinstance(want, bool):
                     want = "on" if want else "off"
             try:
-                return self._json(200, app.set_screen(str(want)))
+                return self._json(200, app.set_theme(str(want)) if is_theme else app.set_screen(str(want)))
             except ValueError as e:
                 return self._json(400, {"error": str(e)})
 

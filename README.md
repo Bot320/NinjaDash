@@ -6,29 +6,65 @@ kiosk mode on a 1080p TV and focuses on three things: **hardware failures**, **f
 
 ![Preview](docs/preview/dashboard-dark.png)
 
-- Boots **straight into the dashboard**, full screen, no login screen
-- **Home Assistant** can switch the TV picture off and on
+- Boots **straight into the dashboard**, full screen, no login screen, no mouse pointer
+- **Updates & storage** panel: OS patches and app updates waiting for approval, low disk space
+- **Home Assistant** can switch the TV picture off/on and choose light or dark colours
 - **Remote Desktop (RDP)** for maintenance while the TV keeps showing the dashboard
-- Read-only access to NinjaOne; the API secret never leaves the mini PC
+- **Strictly read-only** access to NinjaOne ([details](#read-only-access-to-ninjaone)); the API secret never leaves the mini PC
+- Lists fit themselves to the screen: the most important items stay, the rest becomes "+N more"
 
 **Contents:** [Install](#install) · [Command reference](#command-reference) · [Connect NinjaOne](#connect-ninjaone) ·
-[Home Assistant](#home-assistant-screen-onoff) · [Remote Desktop](#remote-desktop-rdp) · [TV: dashboard or KDE](#tv-dashboard-or-kde) ·
+[Read-only](#read-only-access-to-ninjaone) · [Light and dark](#light-and-dark-mode) · [Home Assistant](#home-assistant-screen-onoff) ·
+[Remote Desktop](#remote-desktop-rdp) · [TV: dashboard or KDE](#tv-dashboard-or-kde) · [Dashboard panels](#what-the-dashboard-shows) ·
 [Alert rules](#alert-rules) · [Settings](#settings) · [Update](#update) · [Troubleshooting](#troubleshooting) · [Files](#files) · [Uninstall](#uninstall) · [Development](#development)
 
 ---
 
 ## Install
 
-On the mini PC (Arch Linux / CachyOS), from your normal user account:
+On the mini PC (Arch Linux / CachyOS), in a terminal, from your normal user account.
+
+### Install or update: one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+```
+
+This downloads the newest version to `~/ninjadash-src` and runs the installer. For an update that's all:
+your settings, token, rules and Home Assistant setup are kept. Then `sudo reboot`.
+
+The first install, with the Home Assistant screen switch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --home-assistant
+```
+
+Test a branch (e.g. from a pull request) instead of `main`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash -s -- --branch fix/kiosk-polish
+```
+
+> **Copy and paste:** on GitHub, every grey box has a **copy button** in its top-right corner.
+> In a Linux terminal, paste with **Ctrl+Shift+V** or right-click → *Paste* (plain Ctrl+V doesn't work).
+> On the text console (Ctrl+Alt+F2) there is no clipboard, so type the one-line command above by hand.
+
+### After installing
+
+```bash
+sudo bash ~/ninjadash-src/deploy/setup-rdp.sh   # Remote Desktop (optional, recommended)
+sudo ninjadash edit                             # NinjaOne Client ID + Secret (see below)
+sudo ninjadash check                            # test the NinjaOne connection
+sudo ninjadash home-assistant                   # configuration for Home Assistant
+sudo reboot                                     # from now on it boots into the dashboard
+```
+
+### Step by step, without the one-liner
 
 ```bash
 curl -L -o ninjadash.tar.gz https://github.com/Bot320/NinjaDash/archive/refs/heads/main.tar.gz
 tar xzf ninjadash.tar.gz && cd NinjaDash-main
-sudo bash deploy/install.sh --home-assistant   # dashboard + kiosk + Home Assistant screen switch
-sudo bash deploy/setup-rdp.sh                  # Remote Desktop (optional, recommended)
-sudo ninjadash edit                            # NinjaOne Client ID + Secret (see below)
-sudo ninjadash check                           # test the NinjaOne connection
-sudo reboot                                    # from now on it boots into the dashboard
+sudo bash deploy/install.sh --home-assistant
 ```
 
 Installer options:
@@ -68,7 +104,11 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `ninjadash screen on` | Turns it back on |
 | `ninjadash screen toggle` | Switches between on and off |
 | `ninjadash screen status` | Shows the state. `"agent": true` means the kiosk's screen control is connected |
-| `sudo ninjadash home-assistant` | Prints the Home Assistant configuration incl. IP and token |
+| `ninjadash theme dark` / `light` | Dark or light colours (stays like that until changed, also after a reboot) |
+| `ninjadash theme auto` | Automatic: light between `LIGHT_FROM` and `LIGHT_UNTIL`, dark otherwise |
+| `ninjadash theme toggle` / `status` | Swap light and dark / show the current setting |
+| `sudo ninjadash pointer` | Hides the mouse pointer on the TV right now (normally automatic) |
+| `sudo ninjadash home-assistant` | Prints the Home Assistant configuration (screen + dark mode) incl. IP and token |
 
 ### TV: dashboard or KDE
 
@@ -85,6 +125,8 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `systemctl status ninjadash-kiosk` | The TV screen (cage + Chromium on tty1) |
 | `journalctl -u ninjadash -b` | Backend log since the last boot |
 | `journalctl -u ninjadash-kiosk -b` | Kiosk log since the last boot (Chromium, screen agent) |
+| `journalctl -u ninjadash-pointer -b` | Pointer helper log (hides the mouse pointer) |
+| `sudo ninjadash diag` | Everything about the kiosk screen in one go (send this when something looks wrong) |
 | `systemctl status xrdp xrdp-sesman` | Remote Desktop server |
 
 ### Keys at the mini PC
@@ -125,6 +167,49 @@ The region is set with `NINJA_HOST` (default `eu.ninjarmm.com`).
 
 ---
 
+## Read-only access to NinjaOne
+
+NinjaDash only ever **reads** from NinjaOne. It can't approve patches, run scripts, reboot devices or change
+anything else, and this is enforced in three places:
+
+1. **The API client** in NinjaOne gets only the **Monitoring** scope (read-only). Don't tick Management or Control.
+2. **The login** always asks NinjaOne for the `monitoring` scope only. That's fixed in the code
+   (`backend/ninjadash/ninja.py`); a different `NINJA_SCOPE` in the settings is ignored.
+3. **The code** only sends `GET` requests to `/v2/…`. The single exception is the login itself
+   (`POST /ws/oauth/token`). The test `tests/test_readonly.py` runs a complete sync against a fake NinjaOne
+   and fails if any other kind of request is sent.
+
+The Home Assistant switches (`/api/screen`, `/api/theme`) only change the TV on the mini PC, never NinjaOne.
+
+---
+
+## Light and dark mode
+
+| Setting | Colours |
+|---|---|
+| `auto` (default) | Light between `LIGHT_FROM` and `LIGHT_UNTIL` (07:00–19:00), dark otherwise |
+| `light` / `dark` | Always light / always dark |
+
+Switch it any of these ways. The last choice wins and is kept across reboots (in `/var/lib/ninjadash/state.json`):
+
+- **Home Assistant:** the **NinjaDash dark mode** switch (on = dark, off = light) and `rest_command.ninjadash_theme_auto`
+  (back to automatic). Both are in the block that `sudo ninjadash home-assistant` prints. To follow the sun:
+  ```yaml
+  automation:
+    - alias: NinjaDash dark after sunset
+      trigger: { platform: sun, event: sunset }
+      action: { service: switch.turn_on, target: { entity_id: switch.ninjadash_dark_mode } }
+    - alias: NinjaDash light after sunrise
+      trigger: { platform: sun, event: sunrise }
+      action: { service: switch.turn_off, target: { entity_id: switch.ninjadash_dark_mode } }
+  ```
+- **On the mini PC:** `ninjadash theme dark`, `ninjadash theme light`, `ninjadash theme auto`
+- **The default** after a fresh install: `THEME=` and `LIGHT_FROM=` / `LIGHT_UNTIL=` in `sudo ninjadash edit`
+
+The TV follows within 3 seconds.
+
+---
+
 ## Home Assistant: screen on/off
 
 ```bash
@@ -132,7 +217,8 @@ sudo ninjadash home-assistant
 ```
 
 Paste the printed block into Home Assistant's `configuration.yaml` and restart Home Assistant. You get
-**switch.ninjadash_screen**. To keep the token out of `configuration.yaml`, put it in `secrets.yaml`:
+**switch.ninjadash_screen**, **switch.ninjadash_dark_mode** and **rest_command.ninjadash_theme_auto**.
+To keep the token out of `configuration.yaml`, put it in `secrets.yaml` (the screen switch as an example):
 
 ```yaml
 # secrets.yaml
@@ -162,9 +248,10 @@ curl -H "Authorization: Bearer <token>" http://<mini-pc-ip>:8080/api/screen     
 curl -X POST -H "Authorization: Bearer <token>" http://<mini-pc-ip>:8080/api/screen/off         # off
 curl -X POST -H "Authorization: Bearer <token>" http://<mini-pc-ip>:8080/api/screen/on          # on
 curl -X POST -H "Authorization: Bearer <token>" -d '{"state":"toggle"}' http://<mini-pc-ip>:8080/api/screen
+curl -X POST -H "Authorization: Bearer <token>" http://<mini-pc-ip>:8080/api/theme/dark          # light | dark | auto | toggle
 ```
 
-- From the network only `/api/screen` is reachable, and only with the token. The dashboard data stays on the mini PC.
+- From the network only `/api/screen` and `/api/theme` are reachable, and only with the token. The dashboard data stays on the mini PC.
 - Off cuts the HDMI signal; most TVs then go to standby. The page also goes black as a fallback.
 - Some TVs don't wake up when the signal returns. Then let Home Assistant switch the TV itself (LG webOS,
   Samsung, Sony Bravia and Android TV integrations), or use a USB HDMI-CEC adapter.
@@ -200,6 +287,26 @@ sudo ninjadash kiosk      # TV back to the dashboard (or reboot)
 ```
 
 To return to a normal desktop PC for good, uninstall NinjaDash. The uninstaller turns SDDM back on.
+
+---
+
+## What the dashboard shows
+
+| Panel | Shows | NinjaOne source (read-only) |
+|---|---|---|
+| Header | Organisations, servers and workstations; sync status; clock | `/v2/organizations`, `/v2/devices-detailed` |
+| **Hardware failures · Backups · Antivirus threats** | Devices with a problem, servers counted separately | `/v2/alerts`, `/v2/queries/antivirus-*`, `/v2/backup/jobs` |
+| Online now | Servers and workstations online | `/v2/devices-detailed` |
+| **Servers** | A card per server with a problem, worst first; healthy servers per organisation | alerts, antivirus, backups, offline state |
+| Workstations needing attention | The worst workstation problems | the same sources |
+| **Updates & storage** | OS patches and app updates **awaiting approval** (grouped by update, with how many devices and servers), how many are approved but not installed yet, failed ones, and **volumes at least 90 % full** (servers first) | `/v2/queries/os-patches`, `/v2/queries/software-patches`, `/v2/queries/volumes` |
+| New incidents · 14 days | New hardware / backup / antivirus problems per day | kept by NinjaDash itself |
+
+The layout adapts to how much there is: with few problems the server cards show more detail. With many,
+it switches to three columns and one issue per card, and finally to "+N more servers". The same goes
+for the workstation and update lists. Low-storage thresholds are in `classify.toml` under `[display]`
+(`storage_warn_percent = 90`, `storage_critical_percent = 95`). Volumes under 2 GB and recovery/EFI
+partitions are ignored.
 
 ---
 
@@ -247,9 +354,9 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 | `NINJA_CLIENT_ID`, `NINJA_CLIENT_SECRET` | empty | The API client. Empty = example data |
 | `POLL_FAST` / `POLL_SLOW` | `60` / `300` | Seconds between updates (alerts / antivirus + backup) |
 | `LISTEN` | `127.0.0.1:8080` | `0.0.0.0:8080` = reachable from the network (needed for Home Assistant) |
-| `REMOTE_ACCESS` | `screen` | What other PCs may use: `screen`, `all` (also view the dashboard), `none` |
+| `REMOTE_ACCESS` | `screen` | What other PCs may use: `screen` (only the screen and theme switches, with token), `all` (also view the dashboard), `none` |
 | `SCREEN_TOKEN` | generated | Secret for the screen switch |
-| `THEME` | `auto` | `dark`, `light` or `auto` (light between `LIGHT_FROM` and `LIGHT_UNTIL`) |
+| `THEME` | `auto` | Starting value: `dark`, `light` or `auto` (light between `LIGHT_FROM` and `LIGHT_UNTIL`). A choice made in Home Assistant or with `ninjadash theme` takes over |
 | `LIGHT_FROM` / `LIGHT_UNTIL` | `07:00` / `19:00` | Light-theme hours for `auto` |
 | `HISTORY_DB` | `/var/lib/ninjadash/history.sqlite` | 14-day incident history |
 
@@ -258,10 +365,8 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 ## Update
 
 ```bash
-cd ~ && curl -L -o ninjadash.tar.gz https://github.com/Bot320/NinjaDash/archive/refs/heads/main.tar.gz
-rm -rf NinjaDash-main && tar xzf ninjadash.tar.gz && cd NinjaDash-main
-sudo bash deploy/install.sh
-sudo ninjadash restart
+curl -fsSL https://raw.githubusercontent.com/Bot320/NinjaDash/main/get.sh | bash
+sudo reboot
 ```
 
 Settings, rules, token and history are kept. The installer remembers that Home Assistant is enabled.
@@ -279,6 +384,10 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | Home Assistant switch does nothing | `ninjadash screen status` (is `agent` true?), check the IP/token in HA, firewall port 8080 |
 | TV stays in standby after "on" | The TV doesn't wake on signal: control the TV from HA directly or use HDMI-CEC |
 | Picture edges cut off | Set the TV's picture size to *Just Scan* / *Screen Fit* / *PC* |
+| Mouse pointer visible on the TV | `sudo ninjadash pointer` hides it now. It's automatic from 0.3.0 (`ninjadash-pointer` service); if it keeps coming back, send `sudo ninjadash diag` |
+| Chromium "Translate" popup on the TV | Update to 0.2.2 or newer and reboot |
+| Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
+| `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |
 | RDP: black screen / disconnects | `paru -S --rebuild --nocheck xorgxrdp`, then `sudo systemctl restart xrdp xrdp-sesman` |
 
@@ -292,7 +401,8 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | `/etc/ninjadash/classify.toml` | Your alert rules |
 | `/opt/ninjadash/` | Program (replaced on every update) |
 | `/var/lib/ninjadash/history.sqlite` | 14-day history |
-| `/etc/systemd/system/ninjadash.service`, `ninjadash-kiosk.service` | Services |
+| `/etc/systemd/system/ninjadash.service`, `ninjadash-kiosk.service`, `ninjadash-pointer.service` | Services |
+| `/var/lib/ninjadash/state.json` | Theme chosen via Home Assistant or `ninjadash theme` |
 | `~/.xinitrc` | Starts XFCE for RDP sessions (written by `setup-rdp.sh`) |
 
 ---

@@ -6,11 +6,11 @@ PURGE=0
 [[ ${1:-} == --purge ]] && PURGE=1
 [[ $EUID -eq 0 ]] || exec sudo -- bash "$0" "$@"
 
-systemctl disable --now ninjadash-kiosk.service ninjadash.service 2>/dev/null || true
-rm -f /etc/systemd/system/ninjadash.service /etc/systemd/system/ninjadash-kiosk.service \
+systemctl disable --now ninjadash-pointer.service ninjadash-kiosk.service ninjadash.service 2>/dev/null || true
+rm -f /etc/systemd/system/ninjadash.service /etc/systemd/system/ninjadash-kiosk.service /etc/systemd/system/ninjadash-pointer.service \
       /etc/pam.d/ninjadash-kiosk /usr/local/bin/ninjadash
 systemctl daemon-reload
-rm -rf /opt/ninjadash
+rm -rf /opt/ninjadash /usr/share/icons/ninjadash-blank
 for home in /home/*; do rm -f "$home/.config/autostart/ninjadash.desktop"; done
 
 if [[ -f /etc/ninjadash/.disabled-display-manager ]]; then

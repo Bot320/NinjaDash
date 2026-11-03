@@ -16,8 +16,18 @@ done
 PROFILE="${HOME:-/tmp}/.ninjadash-chromium"
 mkdir -p "$PROFILE"
 
+# English browser UI and page language, so Chromium never offers to translate the (English) dashboard
+# on a German system. LANGUAGE only affects Chromium here, not the rest of the PC.
+export LANGUAGE=en
+# Invisible pointer for Chromium too (in the kiosk service, cage already has these).
+if [[ -z ${XCURSOR_THEME:-} || ${XCURSOR_THEME:-} == ninjadash-blank ]] && [[ -d /usr/share/icons/ninjadash-blank ]] \
+   && [[ -z ${XDG_CURRENT_DESKTOP:-} ]]; then
+  export XCURSOR_THEME=ninjadash-blank XCURSOR_SIZE=24
+fi
+
 exec chromium \
   --kiosk "$URL" \
+  --accept-lang=en-US,en \
   --incognito \
   --user-data-dir="$PROFILE" \
   --no-first-run \

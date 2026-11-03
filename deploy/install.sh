@@ -167,9 +167,24 @@ case $MODE in
     fi
     for g in video render input; do getent group "$g" >/dev/null && usermod -aG "$g" ninjadash-kiosk; done
     install -m 644 "$SRC/deploy/pam/ninjadash-kiosk" /etc/pam.d/ninjadash-kiosk
+    # Invisible pointer for everything on the kiosk screen: cage reads XCURSOR_THEME (set in the
+    # service), Chromium uses the GTK cursor theme or the "default" theme. All three point to it.
+    python3 "$SRC/deploy/kiosk/blank-cursor.py" /usr/share/icons/ninjadash-blank >/dev/null
+    KHOME=$(getent passwd ninjadash-kiosk | cut -d: -f6)
+    install -d -o ninjadash-kiosk -g ninjadash-kiosk "$KHOME/.icons" "$KHOME/.icons/default" \
+      "$KHOME/.config" "$KHOME/.config/gtk-3.0" "$KHOME/.config/gtk-4.0"
+    printf '[Icon Theme]\nName=Default\nInherits=ninjadash-blank\n' > "$KHOME/.icons/default/index.theme"
+    for v in 3.0 4.0; do
+      printf '[Settings]\ngtk-cursor-theme-name=ninjadash-blank\ngtk-cursor-theme-size=24\n' > "$KHOME/.config/gtk-$v/settings.ini"
+    done
+    chown -R ninjadash-kiosk:ninjadash-kiosk "$KHOME/.icons" "$KHOME/.config"
+    ok "Mouse pointer hidden on the kiosk screen"
     sed "s#^Environment=NINJADASH_URL=.*#Environment=NINJADASH_URL=$URL#" \
       "$SRC/deploy/systemd/ninjadash-kiosk.service" > /etc/systemd/system/ninjadash-kiosk.service
     chmod 644 /etc/systemd/system/ninjadash-kiosk.service
+    sed "s#^Environment=NINJADASH_URL=.*#Environment=NINJADASH_URL=$URL#" \
+      "$SRC/deploy/systemd/ninjadash-pointer.service" > /etc/systemd/system/ninjadash-pointer.service
+    chmod 644 /etc/systemd/system/ninjadash-pointer.service
 
     if [[ -L /etc/systemd/system/display-manager.service ]]; then
       DM=$(basename "$(readlink -f /etc/systemd/system/display-manager.service)")
@@ -187,7 +202,8 @@ case $MODE in
     if [[ $MODE == kiosk ]]; then
       systemctl set-default multi-user.target >/dev/null
       systemctl daemon-reload
-      systemctl enable ninjadash-kiosk.service >/dev/null 2>&1
+      systemctl enable ninjadash-kiosk.service ninjadash-pointer.service >/dev/null 2>&1
+      systemctl is-active --quiet ninjadash-kiosk.service && systemctl restart ninjadash-pointer.service
       ok "Kiosk enabled: the dashboard opens full screen on the TV at every boot"
       REBOOT=1
     fi

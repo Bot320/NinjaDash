@@ -1,0 +1,21 @@
+[Unit]
+Description=NinjaDash kiosk: hide the mouse pointer (tiny virtual mouse movement)
+Documentation=file:///opt/ninjadash/README.md
+After=ninjadash-kiosk.service
+PartOf=ninjadash-kiosk.service
+
+[Service]
+Type=simple
+Environment=NINJADASH_URL=http://127.0.0.1:8080/
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=-/usr/bin/modprobe uinput
+ExecStart=/usr/bin/python3 /opt/ninjadash/deploy/kiosk/pointer-nudge.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=ninjadash-kiosk.service
