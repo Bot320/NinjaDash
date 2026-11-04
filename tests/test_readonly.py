@@ -55,6 +55,42 @@ class ReadOnlyTest(unittest.TestCase):
         self.assertGreaterEqual(len(methods), 9)                   # devices, alerts, AV, patches, volumes, ...
         self.assertEqual(app.client.scope, "monitoring")            # NINJA_SCOPE=management is ignored
 
+    def test_broken_optional_endpoint_does_not_stop_the_sync(self):
+        import ninjadash.ninja as ninja_mod
+        app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
+        fake_ninja.BACKUP_CODE = 500                                 # NinjaOne answers 500 when Backup isn't used
+        sleep, ninja_mod.time.sleep = ninja_mod.time.sleep, lambda s: None
+        try:
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()                                         # must not raise
+            backup_calls = [p for m, p in fake_ninja.REQUESTS if p == "/v2/backup/jobs"]
+            self.assertEqual(len(backup_calls), 2)                  # one retry, then skipped
+            self.assertIsNone(app.error)
+            self.assertIsNotNone(app.last_success)
+            s = app.summary()
+            self.assertGreater(len(s["affected"]), 0)
+            self.assertIsNotNone(s["updates"]["os"])                # the other optional panels still load
+            app._next_slow = 0
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()
+            self.assertNotIn("/v2/backup/jobs", [p for m, p in fake_ninja.REQUESTS])   # skipped for an hour
+        finally:
+            fake_ninja.BACKUP_CODE = 404
+            ninja_mod.time.sleep = sleep
+
+    def test_retry_error_names_the_status(self):
+        import ninjadash.ninja as ninja_mod
+        fake_ninja.BACKUP_CODE = 500
+        sleep, ninja_mod.time.sleep = ninja_mod.time.sleep, lambda s: None
+        try:
+            with self.assertRaises(ninja_mod.NinjaError) as cm:
+                NinjaClient(self.base, "x", "test-secret").backup_jobs(attempts=2)
+        finally:
+            fake_ninja.BACKUP_CODE = 404
+            ninja_mod.time.sleep = sleep
+        self.assertEqual(cm.exception.status, 500)
+        self.assertIn("500", str(cm.exception))
+
     def test_login_asks_monitoring_scope_only(self):
         seen = {}
         orig = urllib.request.urlopen

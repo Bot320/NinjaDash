@@ -97,6 +97,7 @@ VOLUMES = [
     {"deviceId": 21, "name": "E:\\", "label": "USB", "deviceType": "Removable Disk", "capacity": 64 * GB, "freeSpace": 1 * GB},  # ignored
 ]
 REQUESTS: list = []          # (method, path) of every request, for the read-only test
+BACKUP_CODE = 404            # what /v2/backup/jobs answers; tests set 500 to mimic a tenant without NinjaOne Backup
 
 
 class H(BaseHTTPRequestHandler):
@@ -152,7 +153,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/v2/queries/antivirus-status":
             return self._json(200, {"cursor": None, "results": AV_STATUS})
         if u.path == "/v2/backup/jobs":
-            return self._json(404, {"error": "Not licensed"})
+            return self._json(BACKUP_CODE, {"error": "Not licensed" if BACKUP_CODE < 500 else "Internal Server Error"})
         if u.path == "/v2/queries/os-patches":
             return self._json(200, {"cursor": None, "results": OS_PATCHES})
         if u.path == "/v2/queries/software-patches":

@@ -77,12 +77,12 @@ def cmd_check(args) -> int:
 
     print("\nOptional data")
     for label, attr, fn in (
-        ("Antivirus status", "av_status", lambda: c.query("/v2/queries/antivirus-status")),
-        ("Antivirus threats", "av_threats", lambda: c.query("/v2/queries/antivirus-threats")),
-        ("NinjaOne Backup jobs", "backup_jobs", c.backup_jobs),
-        ("OS patches", "os_patches", lambda: c.query("/v2/queries/os-patches")),
-        ("App (software) patches", "sw_patches", lambda: c.query("/v2/queries/software-patches")),
-        ("Disk volumes", "volumes", lambda: c.query("/v2/queries/volumes")),
+        ("Antivirus status", "av_status", lambda: c.query("/v2/queries/antivirus-status", attempts=2)),
+        ("Antivirus threats", "av_threats", lambda: c.query("/v2/queries/antivirus-threats", attempts=2)),
+        ("NinjaOne Backup jobs", "backup_jobs", lambda: c.backup_jobs(attempts=2)),
+        ("OS patches", "os_patches", lambda: c.query("/v2/queries/os-patches", attempts=2)),
+        ("App (software) patches", "sw_patches", lambda: c.query("/v2/queries/software-patches", attempts=2)),
+        ("Disk volumes", "volumes", lambda: c.query("/v2/queries/volumes", attempts=2)),
     ):
         try:
             rows = fn()
@@ -94,7 +94,7 @@ def cmd_check(args) -> int:
                 statuses = collections.Counter(str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?")) for r in rows)
                 _info("status values: " + ", ".join(f"{k} {v}" for k, v in statuses.most_common(8)))
         except NinjaError as e:
-            _bad(f"{label}: not available ({e.status or e}). That panel stays empty.")
+            _bad(f"{label}: not available, that part stays empty (the rest works). {e}")
 
     print("\nAlerts by category (what the three tiles will count)")
     devs = {d.get("id"): d for d in snap.devices}
