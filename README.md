@@ -432,6 +432,7 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | Screen doesn't follow the schedule | `ninjadash schedule` shows what it expects; `sudo ninjadash logs` shows "Screen switched … (schedule)" |
 | Chromium "Translate" popup on the TV | Update to 0.2.2 or newer and reboot |
 | "GET /v2/backup/jobs kept failing after retries" | Fixed in 0.4.1: update. NinjaOne answers that with an error when you don't use *NinjaOne Backup*; the dashboard now skips it and backup problems come from alerts (Veeam etc.) as before. The same goes for the antivirus, patch and volume data |
+| OS patches: "0 awaiting approval" but NinjaOne shows devices waiting | Update to 0.4.2 (asks NinjaOne for `MANUAL` patches separately). Still wrong? `sudo ninjadash check` lists every patch status with patch and device counts and where the dashboard puts it; send a photo of the *OS patches* lines |
 | Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |

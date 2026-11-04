@@ -11,7 +11,7 @@ from . import __version__
 from .classify import Classifier
 from .config import load_config
 from .ninja import NinjaClient, NinjaError
-from .summary import Snapshot, build_summary, device_name, first
+from .summary import patch_state, Snapshot, build_summary, device_name, first
 
 
 def cmd_serve(args) -> int:
@@ -80,7 +80,7 @@ def cmd_check(args) -> int:
         ("Antivirus status", "av_status", lambda: c.query("/v2/queries/antivirus-status", attempts=2)),
         ("Antivirus threats", "av_threats", lambda: c.query("/v2/queries/antivirus-threats", attempts=2)),
         ("NinjaOne Backup jobs", "backup_jobs", lambda: c.backup_jobs(attempts=2)),
-        ("OS patches", "os_patches", lambda: c.query("/v2/queries/os-patches", attempts=2)),
+        ("OS patches", "os_patches", lambda: c.os_patches(attempts=2)),
         ("App (software) patches", "sw_patches", lambda: c.query("/v2/queries/software-patches", attempts=2)),
         ("Disk volumes", "volumes", lambda: c.query("/v2/queries/volumes", attempts=2)),
     ):
@@ -91,8 +91,15 @@ def cmd_check(args) -> int:
             if rows and args.fields:
                 _info("fields: " + ", ".join(sorted(rows[0].keys())))
             if rows and attr in ("os_patches", "sw_patches"):
-                statuses = collections.Counter(str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?")) for r in rows)
-                _info("status values: " + ", ".join(f"{k} {v}" for k, v in statuses.most_common(8)))
+                def st(r):
+                    return str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?"))
+                statuses = collections.Counter(st(r) for r in rows)
+                devs_per = collections.defaultdict(set)
+                for r in rows:
+                    devs_per[st(r)].add(first(r, "deviceId", "nodeId"))
+                shown = {"approval": "awaiting approval", "queued": "approved, not installed", "failed": "failed", None: "not shown"}
+                for k, v in statuses.most_common(8):
+                    _info(f"status {k}: {v} patches on {len(devs_per[k])} devices → {shown[patch_state({'status': k})]}")
         except NinjaError as e:
             _bad(f"{label}: not available, that part stays empty (the rest works). {e}")
 

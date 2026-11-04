@@ -122,12 +122,13 @@ class NinjaClient:
             after = max(d.get("id", 0) for d in batch)
         return out
 
-    def query(self, path: str, page_size: int = 1000, max_pages: int = 20, attempts: int = 4) -> list[dict]:
+    def query(self, path: str, page_size: int = 1000, max_pages: int = 20, attempts: int = 4,
+              params: dict | None = None) -> list[dict]:
         """`/v2/queries/*` endpoints return {"results": [...], "cursor": {"name": ...}}."""
         out: list[dict] = []
         cursor = None
         for _ in range(max_pages):
-            data = self.get(path, {"pageSize": page_size, "cursor": cursor}, attempts=attempts) or {}
+            data = self.get(path, {**(params or {}), "pageSize": page_size, "cursor": cursor}, attempts=attempts) or {}
             if isinstance(data, list):
                 out.extend(data)
                 break
@@ -138,6 +139,28 @@ class NinjaClient:
             if not cursor or len(results) < page_size:
                 break
         return out
+
+    def os_patches(self, attempts: int = 4) -> list[dict]:
+        """Pending OS patches. NinjaOne's status values are MANUAL (waiting for approval), APPROVED,
+        FAILED and REJECTED. If the plain list holds no MANUAL ones, they are asked for separately
+        (status=MANUAL) and merged in, so patches waiting for approval are never missed."""
+        rows = self.query("/v2/queries/os-patches", attempts=attempts)
+        if any(str(r.get("status", "")).upper() == "MANUAL" for r in rows):
+            return rows
+        try:
+            manual = self.query("/v2/queries/os-patches", attempts=attempts, params={"status": "MANUAL"})
+        except NinjaError as e:
+            log.info("os-patches with status=MANUAL not available: %s", e)
+            return rows
+
+        def key(r):
+            return (r.get("deviceId"), r.get("id") or r.get("kbNumber") or r.get("name"))
+        seen = {key(r) for r in rows}
+        extra = [r for r in manual if key(r) not in seen]
+        for r in extra:
+            if not r.get("status"):
+                r["status"] = "MANUAL"                  # asked for MANUAL, so that's what they are
+        return rows + extra
 
     def organizations(self) -> list[dict]:
         data = self.get("/v2/organizations", {"pageSize": 1000}) or []

@@ -183,7 +183,8 @@
         <span class="ct">${count(t)}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
-    const meta2 = [`<b>${fmt(u.queued)}</b> approved, not yet installed`];
+    const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
+    const meta2 = [`<b>${fmt(u.queued)}</b> approved${onDev(u.queuedDevices)}`];
     if (u.failed) meta2.push(`<b>${fmt(u.failed)}</b> failed`);
     return `<div class="upd"><div class="uh">${icon}${title}</div>
       <div class="big"><span class="n">${fmt(u.approval)}</span><span class="u">awaiting approval</span></div>

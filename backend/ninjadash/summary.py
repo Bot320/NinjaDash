@@ -184,13 +184,20 @@ QUEUED_WORDS = ("APPROVED", "QUEUED", "SCHEDULED", "DOWNLOAD", "INSTALLING", "ST
 SEVERITY_ORDER = {"critical": 0, "important": 1, "high": 1, "moderate": 2, "medium": 2, "low": 3, "optional": 4}
 
 
+EXACT_STATES = {"MANUAL": "approval", "APPROVED": "queued", "FAILED": "failed", "REJECTED": None}
+
+
 def patch_state(p: dict) -> str | None:
-    s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper()
+    s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper().replace(" ", "_")
+    if s in EXACT_STATES:                                     # NinjaOne's documented values
+        return EXACT_STATES[s]
     if "FAIL" in s:
         return "failed"
     if "REJECT" in s or s in ("INSTALLED", "SUPERSEDED", "NOT_APPLICABLE"):
         return None
-    if any(w in s for w in QUEUED_WORDS) and "NOT_APPROVED" not in s:
+    if any(w in s for w in ("UNAPPROVED", "NOT_APPROVED", "NOTAPPROVED")):
+        return "approval"
+    if any(w in s for w in QUEUED_WORDS):
         return "queued"
     if any(w in s for w in APPROVAL_WORDS):
         return "approval"
@@ -201,7 +208,7 @@ def patch_block(rows: list | None, devices: dict) -> dict | None:
     if rows is None:
         return None
     counts = {"approval": 0, "queued": 0, "failed": 0}
-    approval_devices: set = set()
+    per_state: dict = {"approval": set(), "queued": set(), "failed": set()}
     groups: dict = {}
     for p in rows:
         dev_id = first(p, "deviceId", "nodeId")
@@ -212,9 +219,9 @@ def patch_block(rows: list | None, devices: dict) -> dict | None:
         if not state:
             continue
         counts[state] += 1
+        per_state[state].add(dev_id)
         if state != "approval":
             continue
-        approval_devices.add(dev_id)
         name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
         g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": ""})
         g["devices"].add(dev_id)
@@ -226,8 +233,10 @@ def patch_block(rows: list | None, devices: dict) -> dict | None:
     top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]), SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
     return {
         **counts,
-        "approvalDevices": len(approval_devices),
-        "approvalServers": len({d for d in approval_devices if devices[d]["tier"] == "server"}),
+        "approvalDevices": len(per_state["approval"]),
+        "approvalServers": len({d for d in per_state["approval"] if devices[d]["tier"] == "server"}),
+        "queuedDevices": len(per_state["queued"]),
+        "failedDevices": len(per_state["failed"]),
         "top": [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"]}
                 for g in top[:8]],
     }

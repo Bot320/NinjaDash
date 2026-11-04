@@ -91,6 +91,21 @@ class ReadOnlyTest(unittest.TestCase):
         self.assertEqual(cm.exception.status, 500)
         self.assertIn("500", str(cm.exception))
 
+    def test_manual_os_patches_asked_for_separately(self):
+        c = NinjaClient(self.base, "x", "test-secret")
+        fake_ninja.HIDE_MANUAL = True
+        try:
+            fake_ninja.REQUESTS.clear()
+            rows = c.os_patches()
+        finally:
+            fake_ninja.HIDE_MANUAL = False
+        self.assertEqual(sum(1 for r in rows if r["status"] == "MANUAL"), 2)   # found via ?status=MANUAL
+        self.assertEqual(len(rows), len(fake_ninja.OS_PATCHES))                # all of them, no duplicates
+        self.assertEqual([p for m, p in fake_ninja.REQUESTS].count("/v2/queries/os-patches"), 2)
+        fake_ninja.REQUESTS.clear()
+        c.os_patches()                                                          # MANUAL already in the list:
+        self.assertEqual([p for m, p in fake_ninja.REQUESTS].count("/v2/queries/os-patches"), 1)   # one request
+
     def test_login_asks_monitoring_scope_only(self):
         seen = {}
         orig = urllib.request.urlopen
@@ -135,6 +150,19 @@ class UpdatesPanelTest(unittest.TestCase):
         self.assertEqual((os_["approvalDevices"], os_["approvalServers"]), (4, 2))
         self.assertEqual(os_["top"][0]["name"], "2026-11 Cumulative Update for Windows Server 2022")   # servers first
         self.assertEqual(os_["top"][0]["servers"], 2)
+
+    def test_device_counts_per_state(self):
+        os_ = self.u["os"]
+        self.assertEqual((os_["queuedDevices"], os_["failedDevices"]), (1, 1))
+
+    def test_ninjaone_status_values(self):
+        from ninjadash.summary import patch_state
+        self.assertEqual(patch_state({"status": "MANUAL"}), "approval")
+        self.assertEqual(patch_state({"status": "APPROVED"}), "queued")
+        self.assertEqual(patch_state({"status": "FAILED"}), "failed")
+        self.assertIsNone(patch_state({"status": "REJECTED"}))
+        for waiting in ("UNAPPROVED", "NOT_APPROVED", "Pending approval", "AWAITING_APPROVAL"):
+            self.assertEqual(patch_state({"status": waiting}), "approval", waiting)
 
     def test_app_patches(self):
         apps = self.u["apps"]

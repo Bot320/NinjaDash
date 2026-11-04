@@ -221,7 +221,7 @@ class App:
             self.snap.av_status = self._optional("antivirus-status", lambda: c.query("/v2/queries/antivirus-status", attempts=n))
             self.snap.av_threats = self._optional("antivirus-threats", lambda: c.query("/v2/queries/antivirus-threats", attempts=n))
             self.snap.backup_jobs = self._optional("backup-jobs", lambda: c.backup_jobs(attempts=n))
-            self.snap.os_patches = self._optional("os-patches", lambda: c.query("/v2/queries/os-patches", attempts=n))
+            self.snap.os_patches = self._optional("os-patches", lambda: c.os_patches(attempts=n))
             self.snap.sw_patches = self._optional("software-patches", lambda: c.query("/v2/queries/software-patches", attempts=n))
             self.snap.volumes = self._optional("volumes", lambda: c.query("/v2/queries/volumes", attempts=n))
             self._next_slow = now + self.cfg.poll_slow
