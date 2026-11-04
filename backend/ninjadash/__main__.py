@@ -35,6 +35,45 @@ def _bad(msg):  print(f"  {'\033[31m✗\033[0m' if _TTY else '✗'} {msg}")
 def _info(msg): print(f"    {msg}")
 
 
+SHOWN = {"approval": "awaiting approval", "queued": "approved, not installed", "failed": "failed",
+         "delayed": "delayed", None: "not shown"}
+
+
+def cmd_patches(args) -> int:
+    """Compact look at the raw patch data, small enough for one photo. Read-only, no device names."""
+    cfg = load_config()
+    if not cfg.has_credentials:
+        _bad("NINJA_CLIENT_ID / NINJA_CLIENT_SECRET are empty.")
+        return 2
+    c = NinjaClient(cfg.api_base, cfg.client_id, cfg.client_secret, cfg.scope)
+    now = time.time()
+    print(f"NinjaDash {__version__} · patch data as NinjaOne sends it (nothing is changed)")
+    for label, fn in (("OS patches", lambda: c.os_patches(attempts=2)),
+                      ("App updates", lambda: c.query("/v2/queries/software-patches", attempts=2))):
+        print(f"\n{label}")
+        try:
+            rows = fn()
+        except NinjaError as e:
+            _bad(f"not available: {e}")
+            continue
+        _info(f"{len(rows)} records")
+        if not rows:
+            continue
+        keys = sorted({k for r in rows for k in r})
+        _info("fields: " + ", ".join(keys))
+        by_status: dict = collections.defaultdict(list)
+        for r in rows:
+            by_status[str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?"))].append(r)
+        for status, rs in sorted(by_status.items(), key=lambda kv: -len(kv[1])):
+            devs = {first(r, "deviceId", "nodeId") for r in rs}
+            states = collections.Counter(SHOWN[patch_state(r, now)] for r in rs)
+            _info(f"status {status}: {len(rs)} on {len(devs)} devices → " + ", ".join(f"{n} {w}" for w, n in states.most_common()))
+            ex = {k: v for k, v in rs[0].items() if k not in ("deviceId", "nodeId")}
+            _info("  e.g. " + "  ".join(f"{k}={str(v)[:38]}" for k, v in ex.items())[:400])
+    print("\nTake a photo of this screen and send it.")
+    return 0
+
+
 def cmd_check(args) -> int:
     """Talks to NinjaOne and reports what the dashboard would see. Read-only."""
     cfg = load_config()
@@ -95,11 +134,14 @@ def cmd_check(args) -> int:
                     return str(first(r, "status", "patchStatus", "approvalStatus", "state", default="?"))
                 statuses = collections.Counter(st(r) for r in rows)
                 devs_per = collections.defaultdict(set)
+                where = collections.defaultdict(collections.Counter)
+                now = time.time()
                 for r in rows:
                     devs_per[st(r)].add(first(r, "deviceId", "nodeId"))
-                shown = {"approval": "awaiting approval", "queued": "approved, not installed", "failed": "failed", None: "not shown"}
+                    where[st(r)][SHOWN[patch_state(r, now)]] += 1
                 for k, v in statuses.most_common(8):
-                    _info(f"status {k}: {v} patches on {len(devs_per[k])} devices → {shown[patch_state({'status': k})]}")
+                    _info(f"status {k}: {v} patches on {len(devs_per[k])} devices → "
+                          + ", ".join(f"{n} {w}" if len(where[k]) > 1 else w for w, n in where[k].most_common()))
         except NinjaError as e:
             _bad(f"{label}: not available, that part stays empty (the rest works). {e}")
 
@@ -139,7 +181,8 @@ def cmd_check(args) -> int:
     for key, label in (("os", "OS patches"), ("apps", "App updates")):
         u = s["updates"][key]
         if u:
-            _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices, {u['queued']} queued, {u['failed']} failed")
+            _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices, "
+                  f"{u['delayed']} delayed on {u['delayedDevices']} devices, {u['queued']} approved, {u['failed']} failed")
     st = s["updates"]["storage"]
     if st:
         _info(f"Low storage: {st['total']} volumes ≥ {st['warnPercent']:.0f} % full ({st['critical']} critical)")
@@ -157,11 +200,14 @@ def main(argv=None) -> int:
     p_serve.add_argument("--port", type=int, help="override the port from LISTEN")
     p_check = sub.add_parser("check", help="test the NinjaOne connection and show what the dashboard would see")
     p_check.add_argument("--fields", action="store_true", help="also print the field names NinjaOne returns")
+    sub.add_parser("patches", help="show the raw patch statuses and fields NinjaOne sends (for one photo)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if args.cmd == "check":
         return cmd_check(args)
+    if args.cmd == "patches":
+        return cmd_patches(args)
     if args.cmd is None:
         args.demo, args.port = False, None
     return cmd_serve(args)

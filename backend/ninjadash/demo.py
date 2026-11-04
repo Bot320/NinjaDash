@@ -80,13 +80,16 @@ def _typical(now: float) -> dict:
         },
         "ignoredDevices": 0,
         "updates": {
-            "os": {"approval": 312, "queued": 41, "failed": 3, "approvalDevices": 214, "approvalServers": 12, "queuedDevices": 29, "failedDevices": 3, "top": [
+            "os": {"approval": 14, "queued": 323, "failed": 3, "delayed": 212, "approvalDevices": 12, "approvalServers": 12,
+                   "queuedDevices": 67, "failedDevices": 3, "delayedDevices": 168, "delayedNext": now + 3 * 86400, "top": [
                 {"name": "2026-11 Cumulative Update for Windows Server 2022 (KB5049983)", "devices": 12, "servers": 12, "severity": "critical"},
-                {"name": "2026-11 Cumulative Update for Windows 11 24H2 (KB5049981)", "devices": 168, "servers": 0, "severity": "critical"},
-                {"name": "2026-11 .NET Framework 4.8.1 Update (KB5049620)", "devices": 131, "servers": 9, "severity": "important"},
-                {"name": "Microsoft Defender Antivirus platform update", "devices": 22, "servers": 0, "severity": "moderate"},
+                {"name": "Windows Server 2022 Servicing Stack Update (KB5049610)", "devices": 2, "servers": 2, "severity": "important"},
+            ], "delayedTop": [
+                {"name": "2026-11 Cumulative Update for Windows 11 24H2 (KB5049981)", "devices": 168, "servers": 0, "severity": "critical", "until": now + 3 * 86400},
+                {"name": "2026-11 .NET Framework 4.8.1 Update (KB5049620)", "devices": 31, "servers": 0, "severity": "important", "until": now + 5 * 86400},
+                {"name": "Windows 11 24H2 Feature Update", "devices": 13, "servers": 0, "severity": "optional", "until": now + 40 * 86400},
             ]},
-            "apps": {"approval": 57, "queued": 12, "failed": 1, "approvalDevices": 49, "approvalServers": 3, "queuedDevices": 10, "failedDevices": 1, "top": [
+            "apps": {"approval": 57, "queued": 12, "failed": 1, "approvalDevices": 49, "approvalServers": 3, "queuedDevices": 10, "failedDevices": 1, "delayed": 0, "delayedDevices": 0, "top": [
                 {"name": "Google Chrome 156.0.8078.79", "devices": 31, "servers": 0, "severity": "critical"},
                 {"name": "Adobe Acrobat Reader 25.001.20756", "devices": 14, "servers": 0, "severity": "important"},
                 {"name": "7-Zip 26.00", "devices": 9, "servers": 3, "severity": "moderate"},

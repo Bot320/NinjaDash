@@ -164,6 +164,31 @@ class UpdatesPanelTest(unittest.TestCase):
         for waiting in ("UNAPPROVED", "NOT_APPROVED", "Pending approval", "AWAITING_APPROVAL"):
             self.assertEqual(patch_state({"status": waiting}), "approval", waiting)
 
+    def test_delayed_patches(self):
+        from ninjadash.summary import patch_block, patch_delay, patch_state
+        now = 1_800_000_000
+        day = 86400
+        # the shapes a delayed patch may have; NinjaOne's real field is confirmed with `ninjadash patches`
+        self.assertEqual(patch_delay({"status": "APPROVED", "approveAfter": (now + 2 * day) * 1000}, now), (True, now + 2 * day))
+        self.assertEqual(patch_delay({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 2 * day}, now),
+                         (True, now + 5 * day))
+        self.assertEqual(patch_delay({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 9 * day}, now), (False, None))
+        self.assertTrue(patch_delay({"status": "DELAYED"}, now)[0])
+        self.assertTrue(patch_delay({"status": "PENDING", "delayed": True}, now)[0])
+        self.assertFalse(patch_delay({"status": "APPROVED", "delayed": False, "timestamp": now}, now)[0])
+        self.assertFalse(patch_delay({"status": "APPROVED", "approveAfter": now - day}, now)[0])    # delay is over
+        self.assertEqual(patch_state({"status": "APPROVED", "approveAfter": now + day}, now), "delayed")
+        self.assertEqual(patch_state({"status": "FAILED", "delayed": True}, now), "failed")
+        devices = {1: {"tier": "server"}, 2: {"tier": "workstation"}, 3: {"tier": "workstation"}}
+        rows = [{"deviceId": 2, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 3 * day},
+                {"deviceId": 3, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 2 * day},
+                {"deviceId": 1, "name": "CU 2022", "status": "APPROVED"},
+                {"deviceId": 1, "name": "SSU", "status": "MANUAL"}]
+        b = patch_block(rows, devices, now)
+        self.assertEqual((b["approval"], b["queued"], b["delayed"], b["delayedDevices"]), (1, 1, 2, 2))
+        self.assertEqual(b["delayedNext"], now + 2 * day)
+        self.assertEqual(b["delayedTop"], [{"name": "CU 11", "devices": 2, "servers": 0, "severity": "", "until": now + 2 * day}])
+
     def test_app_patches(self):
         apps = self.u["apps"]
         self.assertEqual((apps["approval"], apps["queued"]), (3, 1))

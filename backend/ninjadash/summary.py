@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from dataclasses import dataclass, field
 
 from .classify import CATEGORIES, SEV_RANK, Classifier
@@ -185,16 +186,62 @@ SEVERITY_ORDER = {"critical": 0, "important": 1, "high": 1, "moderate": 2, "medi
 
 
 EXACT_STATES = {"MANUAL": "approval", "APPROVED": "queued", "FAILED": "failed", "REJECTED": None}
+DELAY_STATUS_WORDS = ("DELAY", "DEFER", "POSTPONE", "WAITING_PERIOD")
+# fields that hold the moment a delayed patch gets approved / may install
+DELAY_UNTIL_KEYS = ("approveafter", "approvalafter", "autoapprov", "approvaldate", "approvedate", "scheduledapproval",
+                    "delayeduntil", "delayuntil", "deferreduntil", "installafter", "approvalat", "approveat")
+RELEASE_KEYS = ("releasedate", "released", "publishdate", "published", "releasetime")
+FALSE_WORDS = ("", "0", "false", "no", "none", "null")
 
 
-def patch_state(p: dict) -> str | None:
+def patch_delay(p: dict, now: float) -> tuple[bool, float | None]:
+    """Is this patch held back by a delay (NinjaOne policy: auto-approve N days after release)?
+    Returns (delayed, until) where until is when it gets approved, if NinjaOne tells us."""
+    until = None
+    days = None
+    release = None
+    for k, v in p.items():
+        kl = k.lower().replace("_", "")
+        if any(w in kl for w in DELAY_UNTIL_KEYS):
+            t = to_epoch(v)
+            if t and t > now:
+                until = t if until is None else min(until, t)
+        elif any(w in kl for w in RELEASE_KEYS):
+            release = to_epoch(v)
+        elif "delay" in kl or "defer" in kl:
+            if isinstance(v, bool):
+                if v:
+                    return True, until
+            elif isinstance(v, (int, float)):
+                days = float(v) if v > 0 else days
+            elif str(v).strip().lower() in ("true", "yes"):
+                return True, until
+            elif str(v).strip().lower() not in FALSE_WORDS:
+                try:
+                    days = float(v) if float(v) > 0 else days
+                except ValueError:
+                    pass
+    if until:
+        return True, until
+    if days and release:
+        t = release + days * 86400
+        return (t > now), (t if t > now else None)
+    if days and not release:
+        return True, None
+    status = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper()
+    return any(w in status for w in DELAY_STATUS_WORDS), None
+
+
+def patch_state(p: dict, now: float | None = None) -> str | None:
     s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper().replace(" ", "_")
-    if s in EXACT_STATES:                                     # NinjaOne's documented values
-        return EXACT_STATES[s]
     if "FAIL" in s:
         return "failed"
     if "REJECT" in s or s in ("INSTALLED", "SUPERSEDED", "NOT_APPLICABLE"):
         return None
+    if patch_delay(p, time.time() if now is None else now)[0]:
+        return "delayed"
+    if s in EXACT_STATES:                                     # NinjaOne's documented values
+        return EXACT_STATES[s]
     if any(w in s for w in ("UNAPPROVED", "NOT_APPROVED", "NOTAPPROVED")):
         return "approval"
     if any(w in s for w in QUEUED_WORDS):
@@ -204,41 +251,56 @@ def patch_state(p: dict) -> str | None:
     return None
 
 
-def patch_block(rows: list | None, devices: dict) -> dict | None:
+def _top(groups: dict, n: int) -> list:
+    top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]),
+                                                 SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
+    return [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"],
+             **({"until": g["until"]} if "until" in g else {})} for g in top[:n]]
+
+
+def patch_block(rows: list | None, devices: dict, now: float | None = None) -> dict | None:
     if rows is None:
         return None
-    counts = {"approval": 0, "queued": 0, "failed": 0}
-    per_state: dict = {"approval": set(), "queued": set(), "failed": set()}
-    groups: dict = {}
+    now = time.time() if now is None else now
+    counts = {"approval": 0, "queued": 0, "failed": 0, "delayed": 0}
+    per_state: dict = {k: set() for k in counts}
+    groups: dict = {"approval": {}, "delayed": {}}
     for p in rows:
         dev_id = first(p, "deviceId", "nodeId")
         dev = devices.get(dev_id)
         if not dev or not dev["tier"]:
             continue
-        state = patch_state(p)
+        state = patch_state(p, now)
         if not state:
             continue
         counts[state] += 1
         per_state[state].add(dev_id)
-        if state != "approval":
+        if state not in groups:
             continue
         name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
-        g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": ""})
+        g = groups[state].setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": ""})
         g["devices"].add(dev_id)
         if dev["tier"] == "server":
             g["servers"].add(dev_id)
         sev = str(first(p, "severity", "impact", "classification", default="")).lower()
         if sev and SEVERITY_ORDER.get(sev, 9) < SEVERITY_ORDER.get(g["severity"], 9):
             g["severity"] = sev
-    top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]), SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
+        if state == "delayed":
+            until = patch_delay(p, now)[1]
+            if until and (g.get("until") is None or until < g["until"]):
+                g["until"] = until
+            g.setdefault("until", None)
+    delayed_until = [g["until"] for g in groups["delayed"].values() if g.get("until")]
     return {
         **counts,
         "approvalDevices": len(per_state["approval"]),
         "approvalServers": len({d for d in per_state["approval"] if devices[d]["tier"] == "server"}),
         "queuedDevices": len(per_state["queued"]),
         "failedDevices": len(per_state["failed"]),
-        "top": [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"]}
-                for g in top[:8]],
+        "delayedDevices": len(per_state["delayed"]),
+        "delayedNext": min(delayed_until) if delayed_until else None,
+        "top": _top(groups["approval"], 8),
+        "delayedTop": _top(groups["delayed"], 8),
     }
 
 
@@ -374,8 +436,8 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
         "workstationTotal": len(ws_issues),
         "trend": history.trend() if history is not None else {c: [0] * 14 for c in CATEGORIES},
         "updates": {
-            "os": patch_block(snap.os_patches, devices),
-            "apps": patch_block(snap.sw_patches, devices),
+            "os": patch_block(snap.os_patches, devices, now),
+            "apps": patch_block(snap.sw_patches, devices, now),
             "storage": storage_block(snap.volumes, clf, devices),
         },
         "ignoredDevices": sum(1 for d in devices.values() if not d["tier"]),
