@@ -184,7 +184,9 @@ def cmd_check(args) -> int:
         u = s["updates"][key]
         if u:
             _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices "
-                  f"({u['autoApprove']} approve automatically later),{u['queued']} approved, {u['failed']} failed")
+                  f"({u['autoApprove']} approve automatically later), {u['queued']} approved, {u['failed']} failed")
+            for t in u["top"][:8]:
+                _info(f"  {t['name'][:60]}: {t['devices']} waiting, {t['approved']} approved")
     st = s["updates"]["storage"]
     if st:
         _info(f"Low storage: {st['total']} volumes ≥ {st['warnPercent']:.0f} % full ({st['critical']} critical)")

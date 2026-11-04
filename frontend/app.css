@@ -165,6 +165,7 @@ header { grid-column: 1 / -1; display: flex; align-items: center; justify-conten
 .urow .dot.critical { background: var(--critical); } .urow .dot.warning, .urow .dot.important { background: var(--warning); }
 .urow .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-1); }
 .urow .ct { color: var(--text-2); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.urow .ct .ok { color: var(--text-3); font-weight: 500; }
 .srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 13.5px; }
 .srow .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srow .nm small { color: var(--text-3); font-size: 12.5px; margin-left: 6px; }

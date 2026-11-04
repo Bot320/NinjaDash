@@ -264,11 +264,14 @@ def patch_reason(p: dict, now: float) -> str:
     return f"status {s}" if s else "no status field"
 
 
-def _top(groups: dict, n: int) -> list:
+def _top(groups: dict, n: int, approved: dict | None = None) -> list:
+    """Updates awaiting approval, servers first. `approved` maps an update name to the devices on
+    which the same update is already approved, so each row can show the split."""
+    approved = approved or {}
     top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]),
                                                  SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
     return [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"],
-             "auto": g["auto"]} for g in top[:n]]
+             "auto": g["auto"], "approved": len(approved.get(g["name"], set()) - g["devices"])} for g in top[:n]]
 
 
 def patch_block(rows: list | None, devices: dict, now: float | None = None) -> dict | None:
@@ -278,6 +281,7 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
     counts = {"approval": 0, "queued": 0, "failed": 0}
     per_state: dict = {k: set() for k in counts}
     groups: dict = {}
+    approved_by_name: dict = {}
     auto_count, auto_next = 0, None
     for p in rows:
         dev_id = first(p, "deviceId", "nodeId")
@@ -289,9 +293,11 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
             continue
         counts[state] += 1
         per_state[state].add(dev_id)
+        name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
+        if state == "queued":
+            approved_by_name.setdefault(name, set()).add(dev_id)
         if state != "approval":
             continue
-        name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
         g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": "", "auto": None})
         g["devices"].add(dev_id)
         if dev["tier"] == "server":
@@ -312,7 +318,7 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
         "failedDevices": len(per_state["failed"]),
         "autoApprove": auto_count,
         "autoApproveNext": auto_next,
-        "top": _top(groups, 8),
+        "top": _top(groups, 8, approved_by_name),
     }
 
 

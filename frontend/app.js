@@ -177,12 +177,23 @@
     </section>`;
   }
 
+  // Windows update names are long; keep the part that tells them apart on a TV
+  const compactName = n => String(n || "")
+    .replace(/Cumulative Update/gi, "CU")
+    .replace(/Servicing Stack Update/gi, "SSU")
+    .replace(/\bfor Windows\b/gi, "Win")
+    .replace(/\bfor Microsoft server operating system,? version\b/gi, "Server")
+    .replace(/\.NET Framework/gi, ".NET")
+    .replace(/\s+/g, " ").trim();
+
   function patchColumn(title, icon, u, emptyText) {
     if (!u) return `<div class="upd"><div class="uh">${icon}${title}</div><div class="na">Not available from NinjaOne for this account.</div></div>`;
+    // "20/40 approved": 20 devices already approved, 20 still waiting (40 need the update)
+    const split = t => `${fmt(t.approved)}/${fmt(t.approved + t.devices)} approved${t.servers ? `<span class="ok"> · ${fmt(t.servers)} srv</span>` : ""}`;
     const count = t => t.servers && t.servers === t.devices ? `${fmt(t.servers)} ${plural(t.servers, "server")}`
       : `${fmt(t.devices)} ${plural(t.devices, "device")}${t.servers ? ` · ${fmt(t.servers)} srv` : ""}`;
-    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
-        <span class="ct">${count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
+    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(compactName(t.name))}</span>
+        <span class="ct">${t.approved ? split(t) : count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
     const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
