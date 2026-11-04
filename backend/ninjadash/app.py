@@ -14,6 +14,7 @@ from .config import Config
 from .demo import demo_summary
 from .history import History
 from .ninja import NinjaClient, NinjaError
+from .schedule import Schedule
 from .summary import Snapshot, build_summary
 
 log = logging.getLogger("ninjadash")
@@ -38,6 +39,13 @@ class App:
         self.screen_on = True              # switched by Home Assistant via /api/screen
         self.screen_changed = time.time()
         self.screen_agent_seen = 0.0       # last poll from the kiosk's screen agent
+        self.schedule_error: str | None = None
+        try:
+            self.schedule = Schedule.from_values(cfg.schedule_values)
+        except ValueError as e:
+            self.schedule, self.schedule_error = None, f"Screen schedule ignored: {e}"
+            log.error("%s", self.schedule_error)
+        self._schedule_last: bool | None = None
         self.state_file = Path(cfg.history_db).parent / "state.json"
         self.theme_mode = self._load_state().get("theme") or cfg.theme   # light | dark | auto
 
@@ -120,9 +128,36 @@ class App:
             "changed": self.screen_changed,
             "agent": time.time() - self.screen_agent_seen < 15,
             "theme": self.theme()["effective"],
+            "schedule": self._schedule_info(),
         }
 
-    def set_screen(self, want: str) -> dict:
+    def _schedule_info(self) -> dict:
+        if not self.schedule:
+            return {"enabled": False, "error": self.schedule_error}
+        minute = int(time.time() // 60)                 # the kiosk asks every 2-3 s; compute once a minute
+        cached = getattr(self, "_schedule_cache", None)
+        if not cached or cached[0] != minute:
+            self._schedule_cache = cached = (minute, self.schedule.describe(dt.datetime.now()))
+        return cached[1]
+
+    def schedule_tick(self, now: dt.datetime | None = None) -> None:
+        """Switch the screen when the schedule's state changes (and once at startup)."""
+        if not self.schedule:
+            return
+        state = self.schedule.is_on(now or dt.datetime.now())
+        if state != self._schedule_last:
+            self._schedule_last = state
+            self.set_screen("on" if state else "off", source="schedule")
+
+    def _run_schedule(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.schedule_tick()
+            except Exception:
+                log.exception("Screen schedule failed")
+            self._stop.wait(15)
+
+    def set_screen(self, want: str, source: str = "manual") -> dict:
         want = str(want or "").strip().lower()
         if want not in ("on", "off", "toggle", "true", "false", "1", "0"):
             raise ValueError("state must be on, off or toggle")
@@ -130,7 +165,7 @@ class App:
         if new != self.screen_on:
             self.screen_on = new
             self.screen_changed = time.time()
-            log.info("Screen switched %s", "on" if new else "off")
+            log.info("Screen switched %s (%s)", "on" if new else "off", source)
         return self.screen()
 
     def healthy(self) -> bool:
@@ -139,6 +174,10 @@ class App:
         return self.last_success is not None and time.time() - self.last_success < 10 * 60
 
     def start(self) -> None:
+        if self.schedule:
+            d = self.schedule.describe(dt.datetime.now())
+            log.info("Screen schedule: on %s, off %s, days %s", d["on"], d["off"], d["days"])
+            threading.Thread(target=self._run_schedule, name="schedule", daemon=True).start()
         if self.demo:
             log.info("No API client configured (or DEMO=1): serving example data")
             return
