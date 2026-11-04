@@ -184,6 +184,8 @@
     .replace(/\bfor Windows\b/gi, "Win")
     .replace(/\bfor Microsoft server operating system,? version\b/gi, "Server")
     .replace(/\.NET Framework/gi, ".NET")
+    .replace(/\bfor (x64|x86|ARM64)-based Systems\b/gi, "$1")
+    .replace(/\bVersion (\d\d H\d|\d{2}H\d)\b/gi, "$1")
     .replace(/\s+/g, " ").trim();
 
   function patchColumn(title, icon, u, emptyText) {
@@ -268,15 +270,15 @@
     </section>
 
     <section class="card trend">
-      <div class="card-head"><div class="card-title">New incidents · last 14 days</div><div class="card-sub">today highlighted</div></div>
+      <div class="card-head"><div class="card-title">New incidents · 14 days</div></div>
       <div class="trows fill">${["hardware", "backup", "antivirus"].map(k => `
         <div class="trow"><span class="k">${CAT[k](16)}${CATNAME[k]}</span>
-          <div class="spark" data-k="${k}" style="height:58px"></div>
+          <div class="spark" data-k="${k}" style="height:50px"></div>
           <span class="tot">${sum(D.trend[k])}<small>14 days</small></span></div>`).join("")}</div>
     </section>`;
 
     fitAll(D);
-    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, 58); });
+    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, 50); });
     const crit = new Set((D.affected || []).filter(s => s.state === "critical").map(s => s.org + "/" + s.name));
     previousCritical = crit.size ? crit : new Set(["-"]);
     tick();
