@@ -24,6 +24,8 @@
     ok:       '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     offline:  '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 8h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
   };
+  const ICON = { clock: svg('<circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.3 1.5"/>', 12) };
+  const dayLabel = epoch => new Date(epoch * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const BIG_OK = SEV.ok.replace('width="14" height="14"', 'width="28" height="28"');
   const WORD = { critical: "Critical", warning: "Warning", ok: "All clear", offline: "Offline", minor: "Minor" };
   const STATEVAR = { critical: "var(--critical)", warning: "var(--warning)", ok: "var(--good)", offline: "var(--offline)" };
@@ -180,15 +182,17 @@
     const count = t => t.servers && t.servers === t.devices ? `${fmt(t.servers)} ${plural(t.servers, "server")}`
       : `${fmt(t.devices)} ${plural(t.devices, "device")}${t.servers ? ` · ${fmt(t.servers)} srv` : ""}`;
     const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
-        <span class="ct">${count(t)}</span></div>`).join("");
+        <span class="ct">${count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
-    const meta2 = [`<b>${fmt(u.queued)}</b> approved, not yet installed`];
+    const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
+    const meta2 = [`<b>${fmt(u.queued)}</b> approved${onDev(u.queuedDevices)}`];
     if (u.failed) meta2.push(`<b>${fmt(u.failed)}</b> failed`);
+    const meta3 = !u.autoApprove ? "" : `<div class="meta m2">${ICON.clock}<b>${fmt(u.autoApprove)}</b> auto-approve · next ${dayLabel(u.autoApproveNext)}</div>`;
     return `<div class="upd"><div class="uh">${icon}${title}</div>
       <div class="big"><span class="n">${fmt(u.approval)}</span><span class="u">awaiting approval</span></div>
       <div class="meta">${meta.join(" · ")}</div>
-      <div class="meta m2">${meta2.join(" · ")}</div>
+      <div class="meta m2">${meta2.join(" · ")}</div>${meta3}
       <div class="rows">${rows || `<div class="more-line">${emptyText}</div>`}<div class="more-line" style="display:none"></div></div>
     </div>`;
   }

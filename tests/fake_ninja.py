@@ -97,6 +97,8 @@ VOLUMES = [
     {"deviceId": 21, "name": "E:\\", "label": "USB", "deviceType": "Removable Disk", "capacity": 64 * GB, "freeSpace": 1 * GB},  # ignored
 ]
 REQUESTS: list = []          # (method, path) of every request, for the read-only test
+HIDE_MANUAL = False          # True: the plain os-patches list leaves out MANUAL ones (only ?status=MANUAL has them)
+BACKUP_CODE = 404            # what /v2/backup/jobs answers; tests set 500 to mimic a tenant without NinjaOne Backup
 
 
 class H(BaseHTTPRequestHandler):
@@ -152,9 +154,18 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/v2/queries/antivirus-status":
             return self._json(200, {"cursor": None, "results": AV_STATUS})
         if u.path == "/v2/backup/jobs":
-            return self._json(404, {"error": "Not licensed"})
+            return self._json(BACKUP_CODE, {"error": "Not licensed" if BACKUP_CODE < 500 else "Internal Server Error"})
         if u.path == "/v2/queries/os-patches":
-            return self._json(200, {"cursor": None, "results": OS_PATCHES})
+            want = q.get("status", [None])[0]
+            rows = [dict(r) for r in OS_PATCHES]
+            if want:
+                rows = [r for r in rows if r["status"] == want]
+                if HIDE_MANUAL:
+                    for r in rows:
+                        r.pop("status")                      # filtered lists may leave the field out
+            elif HIDE_MANUAL:
+                rows = [r for r in rows if r["status"] != "MANUAL"]
+            return self._json(200, {"cursor": None, "results": rows})
         if u.path == "/v2/queries/software-patches":
             return self._json(200, {"cursor": None, "results": SW_PATCHES})
         if u.path == "/v2/queries/volumes":

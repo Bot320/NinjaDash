@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 from dataclasses import dataclass, field
 
 from .classify import CATEGORIES, SEV_RANK, Classifier
@@ -184,52 +185,134 @@ QUEUED_WORDS = ("APPROVED", "QUEUED", "SCHEDULED", "DOWNLOAD", "INSTALLING", "ST
 SEVERITY_ORDER = {"critical": 0, "important": 1, "high": 1, "moderate": 2, "medium": 2, "low": 3, "optional": 4}
 
 
-def patch_state(p: dict) -> str | None:
-    s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper()
+EXACT_STATES = {"MANUAL": "approval", "APPROVED": "queued", "FAILED": "failed", "REJECTED": None}
+DELAY_STATUS_WORDS = ("DELAY", "DEFER", "POSTPONE", "WAITING_PERIOD")
+# fields that hold the moment a delayed patch gets approved / may install
+DELAY_UNTIL_KEYS = ("approveafter", "approvalafter", "autoapprov", "approvaldate", "approvedate", "scheduledapproval",
+                    "delayeduntil", "delayuntil", "deferreduntil", "installafter", "approvalat", "approveat")
+RELEASE_KEYS = ("releasedate", "released", "publishdate", "published", "releasetime")
+FALSE_WORDS = ("", "0", "false", "no", "none", "null")
+
+
+def pending_signal(p: dict, now: float) -> tuple[bool, float | None, str]:
+    """Does this patch record say it is still waiting (NinjaOne shows these as *needs approval*),
+    e.g. a policy that approves it automatically N days after release?
+    Returns (waiting, approved_at, reason). approved_at is when it gets approved, if NinjaOne says."""
+    until = None
+    days = None
+    release = None
+    for k, v in p.items():
+        kl = k.lower().replace("_", "")
+        if any(w in kl for w in DELAY_UNTIL_KEYS):
+            t = to_epoch(v)
+            if t and t > now:
+                until = t if until is None else min(until, t)
+                reason = f"field {k} (future date)"
+        elif any(w in kl for w in RELEASE_KEYS):
+            release = to_epoch(v)
+        elif "delay" in kl or "defer" in kl:
+            if isinstance(v, bool):
+                if v:
+                    return True, until, f"field {k}=true"
+            elif isinstance(v, (int, float)):
+                days = (float(v), k) if v > 0 else days
+            elif str(v).strip().lower() in ("true", "yes"):
+                return True, until, f"field {k}={v}"
+            elif str(v).strip().lower() not in FALSE_WORDS:
+                try:
+                    days = (float(v), k) if float(v) > 0 else days
+                except ValueError:
+                    pass
+    if until:
+        return True, until, reason
+    if days and release:
+        t = release + days[0] * 86400
+        return (t > now), (t if t > now else None), f"field {days[1]}={days[0]:g} days after release"
+    if days:
+        return True, None, f"field {days[1]}={days[0]:g}"
+    status = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper()
+    if any(w in status for w in DELAY_STATUS_WORDS):
+        return True, None, f"status {status}"
+    return False, None, ""
+
+
+def patch_state(p: dict, now: float | None = None) -> str | None:
+    s = str(first(p, "status", "patchStatus", "approvalStatus", "state", default="")).upper().replace(" ", "_")
     if "FAIL" in s:
         return "failed"
     if "REJECT" in s or s in ("INSTALLED", "SUPERSEDED", "NOT_APPLICABLE"):
         return None
-    if any(w in s for w in QUEUED_WORDS) and "NOT_APPROVED" not in s:
+    if pending_signal(p, time.time() if now is None else now)[0]:
+        return "approval"                                     # NinjaOne lists these under "needs approval"
+    if s in EXACT_STATES:                                     # NinjaOne's documented values
+        return EXACT_STATES[s]
+    if any(w in s for w in ("UNAPPROVED", "NOT_APPROVED", "NOTAPPROVED")):
+        return "approval"
+    if any(w in s for w in QUEUED_WORDS):
         return "queued"
     if any(w in s for w in APPROVAL_WORDS):
         return "approval"
     return None
 
 
-def patch_block(rows: list | None, devices: dict) -> dict | None:
+def patch_reason(p: dict, now: float) -> str:
+    """Why patch_state() put this record where it did (for `ninjadash patches`)."""
+    waiting, _, reason = pending_signal(p, now)
+    if waiting and patch_state(p, now) == "approval":
+        return reason
+    s = first(p, "status", "patchStatus", "approvalStatus", "state", default="")
+    return f"status {s}" if s else "no status field"
+
+
+def _top(groups: dict, n: int) -> list:
+    top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]),
+                                                 SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
+    return [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"],
+             "auto": g["auto"]} for g in top[:n]]
+
+
+def patch_block(rows: list | None, devices: dict, now: float | None = None) -> dict | None:
     if rows is None:
         return None
+    now = time.time() if now is None else now
     counts = {"approval": 0, "queued": 0, "failed": 0}
-    approval_devices: set = set()
+    per_state: dict = {k: set() for k in counts}
     groups: dict = {}
+    auto_count, auto_next = 0, None
     for p in rows:
         dev_id = first(p, "deviceId", "nodeId")
         dev = devices.get(dev_id)
         if not dev or not dev["tier"]:
             continue
-        state = patch_state(p)
+        state = patch_state(p, now)
         if not state:
             continue
         counts[state] += 1
+        per_state[state].add(dev_id)
         if state != "approval":
             continue
-        approval_devices.add(dev_id)
         name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
-        g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": ""})
+        g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": "", "auto": None})
         g["devices"].add(dev_id)
         if dev["tier"] == "server":
             g["servers"].add(dev_id)
         sev = str(first(p, "severity", "impact", "classification", default="")).lower()
         if sev and SEVERITY_ORDER.get(sev, 9) < SEVERITY_ORDER.get(g["severity"], 9):
             g["severity"] = sev
-    top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]), SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
+        auto = pending_signal(p, now)[1]                      # approved automatically on this date
+        if auto:
+            auto_count += 1
+            auto_next = auto if auto_next is None else min(auto_next, auto)
+            g["auto"] = auto if g["auto"] is None else min(g["auto"], auto)
     return {
         **counts,
-        "approvalDevices": len(approval_devices),
-        "approvalServers": len({d for d in approval_devices if devices[d]["tier"] == "server"}),
-        "top": [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"]}
-                for g in top[:8]],
+        "approvalDevices": len(per_state["approval"]),
+        "approvalServers": len({d for d in per_state["approval"] if devices[d]["tier"] == "server"}),
+        "queuedDevices": len(per_state["queued"]),
+        "failedDevices": len(per_state["failed"]),
+        "autoApprove": auto_count,
+        "autoApproveNext": auto_next,
+        "top": _top(groups, 8),
     }
 
 
@@ -365,8 +448,8 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
         "workstationTotal": len(ws_issues),
         "trend": history.trend() if history is not None else {c: [0] * 14 for c in CATEGORIES},
         "updates": {
-            "os": patch_block(snap.os_patches, devices),
-            "apps": patch_block(snap.sw_patches, devices),
+            "os": patch_block(snap.os_patches, devices, now),
+            "apps": patch_block(snap.sw_patches, devices, now),
             "storage": storage_block(snap.volumes, clf, devices),
         },
         "ignoredDevices": sum(1 for d in devices.values() if not d["tier"]),

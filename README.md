@@ -96,6 +96,7 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `sudo ninjadash edit` | Opens the settings file (`/etc/ninjadash/ninjadash.env`) in nano |
 | `sudo ninjadash check` | Tests the NinjaOne login and shows what each tile will show. Changes nothing in NinjaOne |
 | `sudo ninjadash check --fields` | The same, plus the field names NinjaOne returns (send this when something looks wrong) |
+| `sudo ninjadash patches` | The patch statuses and fields exactly as NinjaOne sends them, on one screen (take a photo when the patch numbers look wrong) |
 
 ### Screen
 
@@ -431,6 +432,8 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | TV switches itself off after a few hours | The TV's own energy saving: turn off *Auto Power Off* / *Idle TV Standby* in the TV menu |
 | Screen doesn't follow the schedule | `ninjadash schedule` shows what it expects; `sudo ninjadash logs` shows "Screen switched … (schedule)" |
 | Chromium "Translate" popup on the TV | Update to 0.2.2 or newer and reboot |
+| "GET /v2/backup/jobs kept failing after retries" | Fixed in 0.4.1: update. NinjaOne answers that with an error when you don't use *NinjaOne Backup*; the dashboard now skips it and backup problems come from alerts (Veeam etc.) as before. The same goes for the antivirus, patch and volume data |
+| OS patches: "0 awaiting approval" but NinjaOne shows devices waiting | Update to 0.4.4. NinjaOne's API reports some patches that still need approval as *approved* with an extra field; they now count as awaiting approval, and an "auto 7 Nov" note shows when a policy approves one later. Still wrong? `sudo ninjadash patches` shows for every status *why* it was counted where it is; send a photo |
 | Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |

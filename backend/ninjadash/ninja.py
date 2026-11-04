@@ -70,7 +70,7 @@ class NinjaClient:
         return f"Bearer {self._token}"
 
     # ---- requests ---------------------------------------------------------
-    def get(self, path: str, params: dict | None = None):
+    def get(self, path: str, params: dict | None = None, attempts: int = 4):
         """The only way NinjaDash talks to the API: plain GET requests below /v2/ (read-only)."""
         if not path.startswith("/v2/") or ".." in path:
             raise ValueError(f"Refusing to call {path!r}: NinjaDash only reads from /v2/")
@@ -78,7 +78,8 @@ class NinjaClient:
         if params:
             url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
         refreshed = False
-        for attempt in range(4):
+        last_code, last_msg = None, ""
+        for attempt in range(attempts):
             req = urllib.request.Request(url, headers={
                 "Authorization": self._auth_header(), "Accept": "application/json", "User-Agent": USER_AGENT,
             })
@@ -90,19 +91,23 @@ class NinjaClient:
                 if e.code == 401 and not refreshed:
                     self._token = None
                     refreshed = True
+                    e.close()
                     continue
                 if e.code == 429 or e.code >= 500:
-                    wait = _retry_after(e) or min(2 ** attempt * 2, 30)
-                    log.warning("GET %s -> %s, retrying in %ss", path, e.code, wait)
-                    time.sleep(wait)
+                    last_code, last_msg = e.code, _read_error(e)
+                    if attempt < attempts - 1:
+                        wait = _retry_after(e) or min(2 ** attempt * 2, 30)
+                        log.warning("GET %s -> %s, retrying in %ss", path, e.code, wait)
+                        time.sleep(wait)
                     continue
                 raise NinjaError(f"GET {path} failed ({e.code}): {_read_error(e)}", e.code) from None
-            except urllib.error.URLError as e:
-                if attempt < 3:
+            except (urllib.error.URLError, TimeoutError) as e:
+                if attempt < attempts - 1:
                     time.sleep(min(2 ** attempt * 2, 30))
                     continue
-                raise NinjaError(f"Cannot reach {self.base}: {e.reason}") from None
-        raise NinjaError(f"GET {path} kept failing after retries")
+                raise NinjaError(f"Cannot reach {self.base}: {getattr(e, 'reason', e)}") from None
+        detail = f" ({last_code}): {last_msg}" if last_code else ""
+        raise NinjaError(f"GET {path} kept failing after {attempts} tries{detail}", last_code)
 
     def devices(self, page_size: int = 500, max_pages: int = 50) -> list[dict]:
         out: list[dict] = []
@@ -117,12 +122,13 @@ class NinjaClient:
             after = max(d.get("id", 0) for d in batch)
         return out
 
-    def query(self, path: str, page_size: int = 1000, max_pages: int = 20) -> list[dict]:
+    def query(self, path: str, page_size: int = 1000, max_pages: int = 20, attempts: int = 4,
+              params: dict | None = None) -> list[dict]:
         """`/v2/queries/*` endpoints return {"results": [...], "cursor": {"name": ...}}."""
         out: list[dict] = []
         cursor = None
         for _ in range(max_pages):
-            data = self.get(path, {"pageSize": page_size, "cursor": cursor}) or {}
+            data = self.get(path, {**(params or {}), "pageSize": page_size, "cursor": cursor}, attempts=attempts) or {}
             if isinstance(data, list):
                 out.extend(data)
                 break
@@ -134,6 +140,28 @@ class NinjaClient:
                 break
         return out
 
+    def os_patches(self, attempts: int = 4) -> list[dict]:
+        """Pending OS patches. NinjaOne's status values are MANUAL (waiting for approval), APPROVED,
+        FAILED and REJECTED. If the plain list holds no MANUAL ones, they are asked for separately
+        (status=MANUAL) and merged in, so patches waiting for approval are never missed."""
+        rows = self.query("/v2/queries/os-patches", attempts=attempts)
+        if any(str(r.get("status", "")).upper() == "MANUAL" for r in rows):
+            return rows
+        try:
+            manual = self.query("/v2/queries/os-patches", attempts=attempts, params={"status": "MANUAL"})
+        except NinjaError as e:
+            log.info("os-patches with status=MANUAL not available: %s", e)
+            return rows
+
+        def key(r):
+            return (r.get("deviceId"), r.get("id") or r.get("kbNumber") or r.get("name"))
+        seen = {key(r) for r in rows}
+        extra = [r for r in manual if key(r) not in seen]
+        for r in extra:
+            if not r.get("status"):
+                r["status"] = "MANUAL"                  # asked for MANUAL, so that's what they are
+        return rows + extra
+
     def organizations(self) -> list[dict]:
         data = self.get("/v2/organizations", {"pageSize": 1000}) or []
         return data if isinstance(data, list) else data.get("results", [])
@@ -142,8 +170,8 @@ class NinjaClient:
         data = self.get("/v2/alerts") or []
         return data if isinstance(data, list) else data.get("results", [])
 
-    def backup_jobs(self) -> list[dict]:
-        data = self.get("/v2/backup/jobs") or []
+    def backup_jobs(self, attempts: int = 4) -> list[dict]:
+        data = self.get("/v2/backup/jobs", attempts=attempts) or []
         if isinstance(data, dict):
             return data.get("results") or data.get("jobs") or []
         return data

@@ -55,6 +55,57 @@ class ReadOnlyTest(unittest.TestCase):
         self.assertGreaterEqual(len(methods), 9)                   # devices, alerts, AV, patches, volumes, ...
         self.assertEqual(app.client.scope, "monitoring")            # NINJA_SCOPE=management is ignored
 
+    def test_broken_optional_endpoint_does_not_stop_the_sync(self):
+        import ninjadash.ninja as ninja_mod
+        app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
+        fake_ninja.BACKUP_CODE = 500                                 # NinjaOne answers 500 when Backup isn't used
+        sleep, ninja_mod.time.sleep = ninja_mod.time.sleep, lambda s: None
+        try:
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()                                         # must not raise
+            backup_calls = [p for m, p in fake_ninja.REQUESTS if p == "/v2/backup/jobs"]
+            self.assertEqual(len(backup_calls), 2)                  # one retry, then skipped
+            self.assertIsNone(app.error)
+            self.assertIsNotNone(app.last_success)
+            s = app.summary()
+            self.assertGreater(len(s["affected"]), 0)
+            self.assertIsNotNone(s["updates"]["os"])                # the other optional panels still load
+            app._next_slow = 0
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()
+            self.assertNotIn("/v2/backup/jobs", [p for m, p in fake_ninja.REQUESTS])   # skipped for an hour
+        finally:
+            fake_ninja.BACKUP_CODE = 404
+            ninja_mod.time.sleep = sleep
+
+    def test_retry_error_names_the_status(self):
+        import ninjadash.ninja as ninja_mod
+        fake_ninja.BACKUP_CODE = 500
+        sleep, ninja_mod.time.sleep = ninja_mod.time.sleep, lambda s: None
+        try:
+            with self.assertRaises(ninja_mod.NinjaError) as cm:
+                NinjaClient(self.base, "x", "test-secret").backup_jobs(attempts=2)
+        finally:
+            fake_ninja.BACKUP_CODE = 404
+            ninja_mod.time.sleep = sleep
+        self.assertEqual(cm.exception.status, 500)
+        self.assertIn("500", str(cm.exception))
+
+    def test_manual_os_patches_asked_for_separately(self):
+        c = NinjaClient(self.base, "x", "test-secret")
+        fake_ninja.HIDE_MANUAL = True
+        try:
+            fake_ninja.REQUESTS.clear()
+            rows = c.os_patches()
+        finally:
+            fake_ninja.HIDE_MANUAL = False
+        self.assertEqual(sum(1 for r in rows if r["status"] == "MANUAL"), 2)   # found via ?status=MANUAL
+        self.assertEqual(len(rows), len(fake_ninja.OS_PATCHES))                # all of them, no duplicates
+        self.assertEqual([p for m, p in fake_ninja.REQUESTS].count("/v2/queries/os-patches"), 2)
+        fake_ninja.REQUESTS.clear()
+        c.os_patches()                                                          # MANUAL already in the list:
+        self.assertEqual([p for m, p in fake_ninja.REQUESTS].count("/v2/queries/os-patches"), 1)   # one request
+
     def test_login_asks_monitoring_scope_only(self):
         seen = {}
         orig = urllib.request.urlopen
@@ -99,6 +150,48 @@ class UpdatesPanelTest(unittest.TestCase):
         self.assertEqual((os_["approvalDevices"], os_["approvalServers"]), (4, 2))
         self.assertEqual(os_["top"][0]["name"], "2026-11 Cumulative Update for Windows Server 2022")   # servers first
         self.assertEqual(os_["top"][0]["servers"], 2)
+
+    def test_device_counts_per_state(self):
+        os_ = self.u["os"]
+        self.assertEqual((os_["queuedDevices"], os_["failedDevices"]), (1, 1))
+
+    def test_ninjaone_status_values(self):
+        from ninjadash.summary import patch_state
+        self.assertEqual(patch_state({"status": "MANUAL"}), "approval")
+        self.assertEqual(patch_state({"status": "APPROVED"}), "queued")
+        self.assertEqual(patch_state({"status": "FAILED"}), "failed")
+        self.assertIsNone(patch_state({"status": "REJECTED"}))
+        for waiting in ("UNAPPROVED", "NOT_APPROVED", "Pending approval", "AWAITING_APPROVAL"):
+            self.assertEqual(patch_state({"status": waiting}), "approval", waiting)
+
+    def test_waiting_patches_count_as_needing_approval(self):
+        from ninjadash.summary import patch_block, patch_reason, patch_state, pending_signal
+        now = 1_800_000_000
+        day = 86400
+        # shapes a waiting patch may have; NinjaOne's real field is confirmed with `ninjadash patches`
+        self.assertEqual(pending_signal({"status": "APPROVED", "approveAfter": (now + 2 * day) * 1000}, now)[:2], (True, now + 2 * day))
+        self.assertEqual(pending_signal({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 2 * day}, now)[:2],
+                         (True, now + 5 * day))
+        self.assertFalse(pending_signal({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 9 * day}, now)[0])
+        self.assertTrue(pending_signal({"status": "DELAYED"}, now)[0])
+        self.assertTrue(pending_signal({"status": "PENDING", "delayed": True}, now)[0])
+        self.assertFalse(pending_signal({"status": "APPROVED", "delayed": False, "timestamp": now}, now)[0])
+        self.assertFalse(pending_signal({"status": "APPROVED", "approveAfter": now - day}, now)[0])    # date has passed
+        self.assertEqual(patch_state({"status": "APPROVED", "approveAfter": now + day}, now), "approval")
+        self.assertEqual(patch_state({"status": "FAILED", "delayed": True}, now), "failed")
+        self.assertEqual(patch_reason({"status": "APPROVED", "approveAfter": now + day}, now), "field approveAfter (future date)")
+        self.assertEqual(patch_reason({"status": "APPROVED"}, now), "status APPROVED")
+        devices = {1: {"tier": "server"}, 2: {"tier": "workstation"}, 3: {"tier": "workstation"}}
+        rows = [{"deviceId": 2, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 3 * day},
+                {"deviceId": 3, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 2 * day},
+                {"deviceId": 1, "name": "CU 2022", "status": "APPROVED"},
+                {"deviceId": 1, "name": "SSU", "status": "MANUAL"}]
+        b = patch_block(rows, devices, now)
+        self.assertEqual((b["approval"], b["approvalDevices"], b["queued"]), (3, 3, 1))     # like NinjaOne's "needs approval"
+        self.assertEqual((b["autoApprove"], b["autoApproveNext"]), (2, now + 2 * day))
+        cu = next(t for t in b["top"] if t["name"] == "CU 11")
+        self.assertEqual((cu["devices"], cu["auto"]), (2, now + 2 * day))
+        self.assertIsNone(next(t for t in b["top"] if t["name"] == "SSU")["auto"])
 
     def test_app_patches(self):
         apps = self.u["apps"]

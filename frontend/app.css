@@ -158,6 +158,7 @@ header { grid-column: 1 / -1; display: flex; align-items: center; justify-conten
 .upd .meta { font-size: 13.5px; color: var(--text-3); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upd .meta b { color: var(--text-2); font-weight: 650; }
 .upd .meta.m2 { margin-top: 2px; }
+.upd .meta svg { width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; color: var(--text-3); }
 .upd .rows { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; overflow: hidden; }
 .urow { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 9px; align-items: center; font-size: 13.5px; }
 .urow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }

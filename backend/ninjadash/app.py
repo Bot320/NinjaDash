@@ -18,7 +18,8 @@ from .schedule import Schedule
 from .summary import Snapshot, build_summary
 
 log = logging.getLogger("ninjadash")
-UNAVAILABLE_RETRY = 3600      # re-try endpoints that answered 403/404 once an hour
+UNAVAILABLE_RETRY = 3600      # re-try optional endpoints that failed (403/404/500 ...) once an hour
+OPTIONAL_ATTEMPTS = 2         # optional endpoints get one retry, so a broken one never stalls the sync
 
 
 class App:
@@ -188,21 +189,24 @@ class App:
 
     # ---- polling ----------------------------------------------------------
     def _optional(self, name: str, fn):
-        """Call an endpoint that may not exist for this account. Returns None when unavailable."""
+        """Call an endpoint that is nice to have (antivirus, backup, patches, volumes).
+
+        If it fails for any reason, that panel stays empty and the rest of the dashboard keeps
+        updating; the endpoint is tried again an hour later. Returns None when unavailable."""
         now = time.time()
         if self._unavailable.get(name, 0) > now:
             return None
         try:
             result = fn()
+            if name in self._unavailable:
+                log.info("%s works again", name)
             self._unavailable.pop(name, None)
             return result
         except NinjaError as e:
-            if e.status in (400, 403, 404, 405, 501):
-                if name not in self._unavailable:
-                    log.info("%s not available for this account (%s); using alerts instead", name, e.status)
-                self._unavailable[name] = now + UNAVAILABLE_RETRY
-                return None
-            raise
+            if name not in self._unavailable:
+                log.warning("%s not available, skipping it for an hour: %s", name, e)
+            self._unavailable[name] = now + UNAVAILABLE_RETRY
+            return None
 
     def poll_once(self) -> None:
         now = time.time()
@@ -213,12 +217,13 @@ class App:
         self.snap.devices = c.devices()
         self.snap.alerts = c.alerts()
         if now >= self._next_slow:
-            self.snap.av_status = self._optional("antivirus-status", lambda: c.query("/v2/queries/antivirus-status"))
-            self.snap.av_threats = self._optional("antivirus-threats", lambda: c.query("/v2/queries/antivirus-threats"))
-            self.snap.backup_jobs = self._optional("backup-jobs", c.backup_jobs)
-            self.snap.os_patches = self._optional("os-patches", lambda: c.query("/v2/queries/os-patches"))
-            self.snap.sw_patches = self._optional("software-patches", lambda: c.query("/v2/queries/software-patches"))
-            self.snap.volumes = self._optional("volumes", lambda: c.query("/v2/queries/volumes"))
+            n = OPTIONAL_ATTEMPTS
+            self.snap.av_status = self._optional("antivirus-status", lambda: c.query("/v2/queries/antivirus-status", attempts=n))
+            self.snap.av_threats = self._optional("antivirus-threats", lambda: c.query("/v2/queries/antivirus-threats", attempts=n))
+            self.snap.backup_jobs = self._optional("backup-jobs", lambda: c.backup_jobs(attempts=n))
+            self.snap.os_patches = self._optional("os-patches", lambda: c.os_patches(attempts=n))
+            self.snap.sw_patches = self._optional("software-patches", lambda: c.query("/v2/queries/software-patches", attempts=n))
+            self.snap.volumes = self._optional("volumes", lambda: c.query("/v2/queries/volumes", attempts=n))
             self._next_slow = now + self.cfg.poll_slow
         summary = build_summary(self.snap, self.clf, self.history, time.time())
         with self._lock:

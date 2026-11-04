@@ -2,6 +2,7 @@
 # Command-line helper, installed as /usr/local/bin/ninjadash.
 #   sudo ninjadash check            test the NinjaOne connection, show what the dashboard sees
 #   sudo ninjadash check --fields   ... and list the field names NinjaOne returns
+#   sudo ninjadash patches          the patch statuses and fields NinjaOne sends (one screen, for a photo)
 #   sudo ninjadash edit             edit the settings (API client, theme, port, token)
 #   sudo ninjadash restart          apply changed settings or rules
 #   sudo ninjadash status           are the service and the kiosk running?
@@ -51,6 +52,10 @@ greeter_vt() {  # wait up to $1 s for the login screen's session; print its cons
 need_root() { [[ $EUID -eq 0 ]] || { echo "Run with sudo: sudo ninjadash $*"; exit 1; }; }
 
 case "${1:-help}" in
+  patches)
+    need_root patches; shift
+    exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV="$ENV" \
+      PYTHONDONTWRITEBYTECODE=1 python3 -m ninjadash patches "$@" ;;
   check)
     need_root check; shift
     exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV="$ENV" \
@@ -220,5 +225,5 @@ rest_command:
 EOF
     ;;
   *)
-    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
