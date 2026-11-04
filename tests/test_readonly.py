@@ -164,30 +164,34 @@ class UpdatesPanelTest(unittest.TestCase):
         for waiting in ("UNAPPROVED", "NOT_APPROVED", "Pending approval", "AWAITING_APPROVAL"):
             self.assertEqual(patch_state({"status": waiting}), "approval", waiting)
 
-    def test_delayed_patches(self):
-        from ninjadash.summary import patch_block, patch_delay, patch_state
+    def test_waiting_patches_count_as_needing_approval(self):
+        from ninjadash.summary import patch_block, patch_reason, patch_state, pending_signal
         now = 1_800_000_000
         day = 86400
-        # the shapes a delayed patch may have; NinjaOne's real field is confirmed with `ninjadash patches`
-        self.assertEqual(patch_delay({"status": "APPROVED", "approveAfter": (now + 2 * day) * 1000}, now), (True, now + 2 * day))
-        self.assertEqual(patch_delay({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 2 * day}, now),
+        # shapes a waiting patch may have; NinjaOne's real field is confirmed with `ninjadash patches`
+        self.assertEqual(pending_signal({"status": "APPROVED", "approveAfter": (now + 2 * day) * 1000}, now)[:2], (True, now + 2 * day))
+        self.assertEqual(pending_signal({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 2 * day}, now)[:2],
                          (True, now + 5 * day))
-        self.assertEqual(patch_delay({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 9 * day}, now), (False, None))
-        self.assertTrue(patch_delay({"status": "DELAYED"}, now)[0])
-        self.assertTrue(patch_delay({"status": "PENDING", "delayed": True}, now)[0])
-        self.assertFalse(patch_delay({"status": "APPROVED", "delayed": False, "timestamp": now}, now)[0])
-        self.assertFalse(patch_delay({"status": "APPROVED", "approveAfter": now - day}, now)[0])    # delay is over
-        self.assertEqual(patch_state({"status": "APPROVED", "approveAfter": now + day}, now), "delayed")
+        self.assertFalse(pending_signal({"status": "APPROVED", "approvalDelayDays": 7, "releaseDate": now - 9 * day}, now)[0])
+        self.assertTrue(pending_signal({"status": "DELAYED"}, now)[0])
+        self.assertTrue(pending_signal({"status": "PENDING", "delayed": True}, now)[0])
+        self.assertFalse(pending_signal({"status": "APPROVED", "delayed": False, "timestamp": now}, now)[0])
+        self.assertFalse(pending_signal({"status": "APPROVED", "approveAfter": now - day}, now)[0])    # date has passed
+        self.assertEqual(patch_state({"status": "APPROVED", "approveAfter": now + day}, now), "approval")
         self.assertEqual(patch_state({"status": "FAILED", "delayed": True}, now), "failed")
+        self.assertEqual(patch_reason({"status": "APPROVED", "approveAfter": now + day}, now), "field approveAfter (future date)")
+        self.assertEqual(patch_reason({"status": "APPROVED"}, now), "status APPROVED")
         devices = {1: {"tier": "server"}, 2: {"tier": "workstation"}, 3: {"tier": "workstation"}}
         rows = [{"deviceId": 2, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 3 * day},
                 {"deviceId": 3, "name": "CU 11", "status": "APPROVED", "approveAfter": now + 2 * day},
                 {"deviceId": 1, "name": "CU 2022", "status": "APPROVED"},
                 {"deviceId": 1, "name": "SSU", "status": "MANUAL"}]
         b = patch_block(rows, devices, now)
-        self.assertEqual((b["approval"], b["queued"], b["delayed"], b["delayedDevices"]), (1, 1, 2, 2))
-        self.assertEqual(b["delayedNext"], now + 2 * day)
-        self.assertEqual(b["delayedTop"], [{"name": "CU 11", "devices": 2, "servers": 0, "severity": "", "until": now + 2 * day}])
+        self.assertEqual((b["approval"], b["approvalDevices"], b["queued"]), (3, 3, 1))     # like NinjaOne's "needs approval"
+        self.assertEqual((b["autoApprove"], b["autoApproveNext"]), (2, now + 2 * day))
+        cu = next(t for t in b["top"] if t["name"] == "CU 11")
+        self.assertEqual((cu["devices"], cu["auto"]), (2, now + 2 * day))
+        self.assertIsNone(next(t for t in b["top"] if t["name"] == "SSU")["auto"])
 
     def test_app_patches(self):
         apps = self.u["apps"]

@@ -11,7 +11,7 @@ from . import __version__
 from .classify import Classifier
 from .config import load_config
 from .ninja import NinjaClient, NinjaError
-from .summary import patch_state, Snapshot, build_summary, device_name, first
+from .summary import patch_reason, patch_state, Snapshot, build_summary, device_name, first
 
 
 def cmd_serve(args) -> int:
@@ -36,7 +36,7 @@ def _info(msg): print(f"    {msg}")
 
 
 SHOWN = {"approval": "awaiting approval", "queued": "approved, not installed", "failed": "failed",
-         "delayed": "delayed", None: "not shown"}
+         None: "not shown"}
 
 
 def cmd_patches(args) -> int:
@@ -68,6 +68,8 @@ def cmd_patches(args) -> int:
             devs = {first(r, "deviceId", "nodeId") for r in rs}
             states = collections.Counter(SHOWN[patch_state(r, now)] for r in rs)
             _info(f"status {status}: {len(rs)} on {len(devs)} devices → " + ", ".join(f"{n} {w}" for w, n in states.most_common()))
+            why = collections.Counter(patch_reason(r, now) for r in rs)
+            _info("  because: " + "; ".join(f"{w} ({n})" for w, n in why.most_common(3)))
             ex = {k: v for k, v in rs[0].items() if k not in ("deviceId", "nodeId")}
             _info("  e.g. " + "  ".join(f"{k}={str(v)[:38]}" for k, v in ex.items())[:400])
     print("\nTake a photo of this screen and send it.")
@@ -181,8 +183,8 @@ def cmd_check(args) -> int:
     for key, label in (("os", "OS patches"), ("apps", "App updates")):
         u = s["updates"][key]
         if u:
-            _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices, "
-                  f"{u['delayed']} delayed on {u['delayedDevices']} devices, {u['queued']} approved, {u['failed']} failed")
+            _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices "
+                  f"({u['autoApprove']} approve automatically later),{u['queued']} approved, {u['failed']} failed")
     st = s["updates"]["storage"]
     if st:
         _info(f"Low storage: {st['total']} volumes ≥ {st['warnPercent']:.0f} % full ({st['critical']} critical)")

@@ -181,20 +181,14 @@
     if (!u) return `<div class="upd"><div class="uh">${icon}${title}</div><div class="na">Not available from NinjaOne for this account.</div></div>`;
     const count = t => t.servers && t.servers === t.devices ? `${fmt(t.servers)} ${plural(t.servers, "server")}`
       : `${fmt(t.devices)} ${plural(t.devices, "device")}${t.servers ? ` · ${fmt(t.servers)} srv` : ""}`;
-    const row = (t, extra) => `<div class="urow${extra ? " later" : ""}"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
-        <span class="ct">${count(t)}${extra || ""}</span></div>`;
-    let rows = (u.top || []).map(t => row(t)).join("");
-    if ((u.delayedTop || []).length) {
-      rows += `<div class="usub">${ICON.clock}Delayed</div>` +
-        u.delayedTop.map(t => row(t, t.until ? ` · ${dayLabel(t.until)}` : " · delayed")).join("");
-    }
+    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
+        <span class="ct">${count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
     const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
     const meta2 = [`<b>${fmt(u.queued)}</b> approved${onDev(u.queuedDevices)}`];
     if (u.failed) meta2.push(`<b>${fmt(u.failed)}</b> failed`);
-    const meta3 = u.delayed == null ? "" : `<div class="meta m2">${ICON.clock}<b>${fmt(u.delayed)}</b> delayed${u.delayed ? onDev(u.delayedDevices) : ""}${
-      u.delayedNext ? ` · next ${dayLabel(u.delayedNext)}` : ""}</div>`;
+    const meta3 = !u.autoApprove ? "" : `<div class="meta m2">${ICON.clock}<b>${fmt(u.autoApprove)}</b> auto-approve · next ${dayLabel(u.autoApproveNext)}</div>`;
     return `<div class="upd"><div class="uh">${icon}${title}</div>
       <div class="big"><span class="n">${fmt(u.approval)}</span><span class="u">awaiting approval</span></div>
       <div class="meta">${meta.join(" · ")}</div>
