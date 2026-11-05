@@ -1,5 +1,5 @@
-/* NinjaDash wall display: fetches /api/summary every 30 s, draws the 1920x1080 screen, and
-   shrinks long lists to what fits ("+N more") so nothing is cut off. */
+/* NinjaDash wall display: fetches /api/summary every 30 s, fills the window at real size (text and UI
+   keep their size on any screen), and shrinks long lists to what fits ("+N more") so nothing is cut off. */
 (function () {
   "use strict";
   const REFRESH_MS = 30000;
@@ -68,12 +68,24 @@
     } catch (e) { /* keep the current state */ }
   }
 
-  // ---- scale the 1920x1080 canvas to the screen ----
+  // ---- fill the window at real size ----
+  // The layout adapts to any window; text and UI keep their size. Only a window smaller than
+  // MIN_W x MIN_H is shrunk as a whole, so the layout never gets cramped.
+  const MIN_W = 1280, MIN_H = 720;
   function fit() {
-    const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    document.getElementById("screen").style.transform = `scale(${scale})`;
+    const w = window.innerWidth, h = window.innerHeight;
+    const scale = Math.min(1, w / MIN_W, h / MIN_H);
+    const el = document.getElementById("screen");
+    el.style.width = `${w / scale}px`;
+    el.style.height = `${h / scale}px`;
+    el.style.transform = scale < 1 ? `scale(${scale})` : "";
   }
-  window.addEventListener("resize", fit);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    fit();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (data) render(); }, 150);   // re-fit lists to the new size
+  });
 
   // ---- status pill + clock ----
   function statusPill() {
@@ -273,12 +285,12 @@
       <div class="card-head"><div class="card-title">New incidents · 14 days</div></div>
       <div class="trows fill">${["hardware", "backup", "antivirus"].map(k => `
         <div class="trow"><span class="k">${CAT[k](16)}${CATNAME[k]}</span>
-          <div class="spark" data-k="${k}" style="height:50px"></div>
+          <div class="spark" data-k="${k}"></div>
           <span class="tot">${sum(D.trend[k])}<small>14 days</small></span></div>`).join("")}</div>
     </section>`;
 
     fitAll(D);
-    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, 50); });
+    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, Math.max(18, Math.min(58, el.clientHeight || 50))); });
     const crit = new Set((D.affected || []).filter(s => s.state === "critical").map(s => s.org + "/" + s.name));
     previousCritical = crit.size ? crit : new Set(["-"]);
     tick();
@@ -320,7 +332,9 @@
       m.style.display = extra > 0 ? "" : "none";
       m.textContent = extra > 0 ? `+${extra} more ${plural(extra, "issue")}` : "";
     });
-    const layouts = [{ cols3: false, one: false }, { cols3: true, one: false }, { cols3: true, one: true }];
+    const wide = grid.clientWidth >= 1000;                // 3 columns only when the cards stay readable
+    const layouts = wide ? [{ cols3: false, one: false }, { cols3: true, one: false }, { cols3: true, one: true }]
+                         : [{ cols3: false, one: false }, { cols3: false, one: true }];
     for (const l of layouts) {
       grid.classList.toggle("cols-3", l.cols3);
       grid.classList.toggle("one", l.one);

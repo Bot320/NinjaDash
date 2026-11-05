@@ -1,4 +1,4 @@
-/* NinjaDash wall display. Designed at 1920x1080; app.js scales the canvas to other screen sizes.
+/* NinjaDash wall display. Designed at 1920x1080 but fills any window at real size (app.js sets the size).
    Dark is the default; html[data-theme="light"] switches (time of day or Home Assistant). */
 :root {
   color-scheme: dark;
@@ -37,13 +37,13 @@ body {
     linear-gradient(160deg, var(--bg-1), var(--bg-2));
   background-color: var(--bg-1);
 }
-.stage { position: absolute; inset: 0; display: grid; place-items: center; }
+.stage { position: absolute; inset: 0; overflow: hidden; }
 .screen {
-  width: 1920px; height: 1080px; padding: 26px 28px 28px; flex: none;
+  width: 100vw; height: 100vh; padding: 26px 28px 28px; flex: none;
   display: grid; gap: 20px; font-feature-settings: "cv11", "ss01";
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: 44px 164px minmax(0, 1.12fr) minmax(0, 1fr);
-  transform-origin: center center;
+  transform-origin: 0 0;
 }
 .boot { grid-column: 1 / -1; grid-row: 2 / -1; display: grid; place-items: center; font-size: 22px; color: var(--text-3); }
 .blackout { position: fixed; inset: 0; background: #000; z-index: 100; display: none; }
@@ -192,9 +192,11 @@ header { grid-column: 1 / -1; display: flex; align-items: center; justify-conten
 
 /* ---------- trend ---------- */
 .trend { grid-column: span 3; }
-.trows { display: flex; flex-direction: column; justify-content: space-around; }
+.trows { display: flex; flex-direction: column; }
 .trow { display: grid; grid-template-columns: minmax(0, 1fr) 54px; grid-template-areas: "k tot" "spark tot"; gap: 4px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); }
-.trow .k { grid-area: k; } .trow .spark { grid-area: spark; } .trow .tot { grid-area: tot; }
+.trow { flex: 1 1 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+.trow .k { grid-area: k; } .trow .tot { grid-area: tot; }
+.trow .spark { grid-area: spark; align-self: stretch; min-height: 18px; overflow: hidden; display: flex; align-items: flex-end; }
 .trow:first-child { border-top: 0; }
 .trow .k { font-size: 15px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
 .trow .tot { text-align: right; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
