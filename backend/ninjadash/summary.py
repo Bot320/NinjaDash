@@ -404,7 +404,7 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
             "offline": bool(d.get("offline")),
             "last_contact": to_epoch(first(d, "lastContact", "lastUpdate")),
         }
-    # devices offline longer than hide_offline_days are left out of warnings and storage (0 = never)
+    # devices offline longer than HIDE_OFFLINE_DAYS (settings file) are left out of warnings and storage (0 = never)
     hide_days = float(clf.display.get("hide_offline_days", 30) or 0)
     for d in devices.values():
         d["stale"] = bool(hide_days and d["tier"] and d["offline"] and d["last_contact"]

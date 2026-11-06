@@ -3,7 +3,7 @@
 #   sudo ninjadash check            test the NinjaOne connection, show what the dashboard sees
 #   sudo ninjadash check --fields   ... and list the field names NinjaOne returns
 #   sudo ninjadash patches          the patch statuses and fields NinjaOne sends (one screen, for a photo)
-#   sudo ninjadash edit             edit the settings (API client, theme, port, token)
+#   sudo ninjadash edit             edit the settings (API client, theme, port, token, offline days)
 #   sudo ninjadash restart          apply changed settings or rules
 #   sudo ninjadash status           are the service and the kiosk running?
 #   sudo ninjadash logs             follow the log

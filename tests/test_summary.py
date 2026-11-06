@@ -55,6 +55,25 @@ class ClassifierTest(unittest.TestCase):
         self.assertIn("SRV-FS01", [a["name"] for a in s["affected"]])
         self.assertEqual(s["hiddenOffline"]["servers"], 0)
 
+    def test_hide_offline_days_comes_from_the_settings_file(self):
+        import copy
+        import os
+        from unittest import mock
+        from ninjadash.config import load_config
+        now = time.time()
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        next(d for d in devs if d["id"] == 1).update(offline=True, lastContact=now - 40 * 86400)
+        snap = Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=fake_ninja.ALERTS)
+        tmp = Path(tempfile.mkdtemp())
+        for value, hidden in (("60", 0), ("0", 0), ("", 1), ("20", 1)):
+            (tmp / "ninjadash.env").write_text(f"NINJA_CLIENT_ID=\nHIDE_OFFLINE_DAYS={value}   # comment\n")
+            env = {"NINJADASH_ENV": str(tmp / "ninjadash.env"), "NINJADASH_RULES": str(DEFAULT_RULES)}
+            with mock.patch.dict(os.environ, env):
+                os.environ.pop("HIDE_OFFLINE_DAYS", None)
+                cfg = load_config()
+            s = build_summary(snap, Classifier(cfg.rules), None, now)
+            self.assertEqual(s["hiddenOffline"]["servers"], hidden, f"HIDE_OFFLINE_DAYS={value!r}")
+
     def test_custom_field_condition_text(self):
         from ninjadash.summary import alert_label
         cases = {
