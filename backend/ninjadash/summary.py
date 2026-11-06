@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -79,6 +80,37 @@ def chip_state(sev: str) -> str:
 
 
 # ---- issue extraction --------------------------------------------------------
+# NinjaOne starts the message of a custom field condition with a fixed phrase, e.g.
+# "Benutzerdefinierte Felder Bedingung wurde erfüllt: Veeam Backup Fehler" or
+# "Custom Fields condition was met - Veeam backup failed". Only the part after it says what's wrong.
+GENERIC_PREFIX = re.compile(
+    r"^\s*(?:benutzerdefinierte[snrm]?\s+feld(?:er)?|custom\s+fields?|user[\s-]*defined\s+fields?)"
+    r"(?:[\s-]*(?:bedingung|condition))?"
+    r"(?:\s+(?:wurde|was|has\s+been|is|ist))?"
+    r"(?:\s+(?:erfüllt|erfuellt|ausgelöst|ausgeloest|met|triggered|reached|erreicht))?"
+    r"(?:\s+(?:für|fuer|for|bei|on))?"
+    r"[\s:\-–—.,;]*", re.IGNORECASE)
+
+
+def alert_label(a: dict, subject: str, message: str) -> str:
+    """The text shown for an alert: subject or first message line, without NinjaOne's generic
+    "custom field condition was met" phrase; falls back to the condition's own name."""
+    message_line = next((ln for ln in str(message).splitlines() if ln.strip()), "")
+    label = str(subject or message_line or "").strip()
+    m = GENERIC_PREFIX.match(label)
+    if m and m.end() > 0:
+        rest = label[m.end():].strip()
+        if rest.startswith(("(", "[", "\"", "'", "„", "“")):
+            rest = rest.strip("()[]\"'„“” ").strip()
+        if not rest and subject and message_line and message_line != label:
+            rest = alert_label(a, "", message_line)      # generic subject: try the message
+        label = rest
+    if not label:
+        src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
+        label = str(first(a, "conditionName", "sourceConfigName", "sourceName", default="") or src.get("name") or "Alert")
+    return label
+
+
 def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
     out = []
     for a in snap.alerts:
@@ -96,8 +128,7 @@ def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
         severity = (rule or {}).get("severity") or clf.severity(a.get("severity"), a.get("priority"))
         if category == "other" and not (dev["tier"] == "server" and clf.shows_other(severity)):
             continue
-        message_line = next((ln for ln in str(message).splitlines() if ln.strip()), "")
-        label = subject or message_line or first(a, "sourceName", default="Alert")
+        label = alert_label(a, subject, message)
         out.append(Issue(dev_id, category, severity, short(label), to_epoch(first(a, "createTime", "activityTime", "updateTime")),
                          f"alert:{first(a, 'uid', 'id', default=label)}"))
     return out

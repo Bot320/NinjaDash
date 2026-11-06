@@ -36,6 +36,26 @@ class ClassifierTest(unittest.TestCase):
         self.assertEqual(self.clf.tier("MAC", "x"), "workstation")
         self.assertIsNone(self.clf.tier("VMWARE_VM_GUEST", "x"))
 
+    def test_custom_field_condition_text(self):
+        from ninjadash.summary import alert_label
+        cases = {
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt: Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt - Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt (Vaeem Backup Fehler)": "Vaeem Backup Fehler",
+            "Benutzerdefiniertes Feld Bedingung wurde erfüllt für Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Custom Fields condition was met: Veeam backup failed": "Veeam backup failed",
+            "Custom field condition triggered - Veeam backup failed": "Veeam backup failed",
+            "RAID 5 degraded · disk 2 failed": "RAID 5 degraded · disk 2 failed",          # other alerts untouched
+            "Customer portal certificate expires": "Customer portal certificate expires",
+        }
+        for text, want in cases.items():
+            self.assertEqual(alert_label({}, "", text), want, text)
+        # only the generic phrase: use the condition's own name
+        self.assertEqual(alert_label({"sourceName": "Vaeem Backup Fehler"}, "", "Benutzerdefinierte Felder Bedingung wurde erfüllt"),
+                         "Vaeem Backup Fehler")
+        # generic subject, the detail is in the message
+        self.assertEqual(alert_label({}, "Custom Fields condition was met", "Veeam backup failed\nmore text"), "Veeam backup failed")
+
     def test_categories(self):
         cat = lambda text, cond="": self.clf.category([cond] if cond else [], text)[0]
         self.assertEqual(cat("Veeam job 'Daily' finished with Failed"), "backup")
