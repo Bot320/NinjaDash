@@ -363,7 +363,7 @@ def storage_block(rows: list | None, clf: Classifier, devices: dict) -> dict | N
     items = []
     for v in rows:
         dev = devices.get(first(v, "deviceId", "nodeId"))
-        if not dev or not dev["tier"]:
+        if not dev or not dev["tier"] or dev.get("stale"):
             continue
         try:
             cap = float(first(v, "capacity", "size", "totalSpace", "totalSize"))
@@ -404,12 +404,18 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
             "offline": bool(d.get("offline")),
             "last_contact": to_epoch(first(d, "lastContact", "lastUpdate")),
         }
+    # devices offline longer than hide_offline_days are left out of warnings and storage (0 = never)
+    hide_days = float(clf.display.get("hide_offline_days", 30) or 0)
+    for d in devices.values():
+        d["stale"] = bool(hide_days and d["tier"] and d["offline"] and d["last_contact"]
+                          and now - d["last_contact"] > hide_days * 86400)
 
     issues = alert_issues(snap, clf, devices)
     issues += antivirus_issues(snap, clf, devices, now)
     b_issues, backup_stats = backup_issues(snap, clf, devices, now)
     issues += b_issues
     issues += offline_issues(clf, devices, now)
+    issues = [i for i in issues if not devices[i.device_id]["stale"]]
 
     seen, unique = set(), []
     for i in sorted(issues, key=lambda i: (SEV_RANK.get(i.severity, 9), -(i.since or 0))):
@@ -443,7 +449,7 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
     affected.sort(key=lambda s: (s["_rank"], -s["_newest"], s["name"]))
     for s in affected:
         s.pop("_rank"), s.pop("_newest")
-    healthy = sorted(({"name": d["name"], "org": d["org"]} for k, d in servers.items() if k not in by_device),
+    healthy = sorted(({"name": d["name"], "org": d["org"]} for k, d in servers.items() if k not in by_device and not d["stale"]),
                      key=lambda s: (s["org"].lower(), s["name"].lower()))
 
     ws_issues = [dict(issue_json(i), device=devices[i.device_id]["name"], org=devices[i.device_id]["org"])
@@ -490,4 +496,7 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
             "storage": storage_block(snap.volumes, clf, devices),
         },
         "ignoredDevices": sum(1 for d in devices.values() if not d["tier"]),
+        "hiddenOffline": {"servers": sum(1 for d in servers.values() if d["stale"]),
+                          "workstations": sum(1 for d in workstations.values() if d["stale"]),
+                          "days": int(hide_days)},
     }

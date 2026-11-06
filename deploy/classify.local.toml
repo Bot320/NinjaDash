@@ -29,3 +29,7 @@
 # Example: show every "other" server alert, not just critical ones
 # [display]
 # other_min_severity = "warning"
+
+# Example: hide devices that have been offline for more than 60 days instead of 30 (0 = show all)
+# [display]
+# hide_offline_days = 60

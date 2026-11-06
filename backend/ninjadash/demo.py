@@ -79,6 +79,7 @@ def _typical(now: float) -> dict:
             "antivirus": [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 2],
         },
         "ignoredDevices": 0,
+        "hiddenOffline": {"servers": 1, "workstations": 7, "days": 30},
         "updates": {
             "os": {"approval": 90, "queued": 323, "failed": 3, "approvalDevices": 67, "approvalServers": 12,
                    "queuedDevices": 67, "failedDevices": 3, "autoApprove": 31, "autoApproveNext": now + 3 * 86400, "top": [

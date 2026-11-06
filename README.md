@@ -436,6 +436,7 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | OS patches: "0 awaiting approval" but NinjaOne shows devices waiting | Update to 0.4.4. NinjaOne's API reports some patches that still need approval as *approved* with an extra field; they now count as awaiting approval, and an "auto 7 Nov" note shows when a policy approves one later. Still wrong? `sudo ninjadash patches` shows for every status *why* it was counted where it is; send a photo |
 | Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
+| A device is missing from the warnings or Low storage | Devices offline for more than 30 days are hidden (the Servers card says how many). Change it in `/etc/ninjadash/classify.toml`: `[display]` `hide_offline_days = 60` (0 = show all), then `sudo ninjadash restart` |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |
 | RDP: black screen / disconnects | `paru -S --rebuild --nocheck xorgxrdp`, then `sudo systemctl restart xrdp xrdp-sesman` |
 

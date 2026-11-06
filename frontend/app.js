@@ -179,7 +179,7 @@
       .map(([o, n]) => `<span class="org-chip">${esc(o)} <b>${n}</b></span>`).join("")}</div>` : "";
     return `<section class="card servers">
       <div class="card-head"><div class="card-title">Servers</div>
-        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy</div></div>
+        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy${hiddenNote(D)}</div></div>
       <div class="srv-body fill">
         ${affected.length
           ? `<div class="affected">${affected.map(card).join("")}<div class="srv-card more-card" style="display:none"></div></div>`
@@ -199,6 +199,11 @@
     .replace(/\bfor (x64|x86|ARM64)-based Systems\b/gi, "$1")
     .replace(/\bVersion (\d\d H\d|\d{2}H\d)\b/gi, "$1")
     .replace(/\s+/g, " ").trim();
+
+  function hiddenNote(D) {
+    const h = D.hiddenOffline || {}, n = (h.servers || 0) + (h.workstations || 0);
+    return n ? ` · ${fmt(n)} offline > ${h.days} d hidden` : "";
+  }
 
   function patchColumn(title, icon, u, emptyText) {
     if (!u) return `<div class="upd"><div class="uh">${icon}${title}</div><div class="na">Not available from NinjaOne for this account.</div></div>`;

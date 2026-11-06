@@ -36,6 +36,25 @@ class ClassifierTest(unittest.TestCase):
         self.assertEqual(self.clf.tier("MAC", "x"), "workstation")
         self.assertIsNone(self.clf.tier("VMWARE_VM_GUEST", "x"))
 
+    def test_long_offline_devices_are_hidden(self):
+        import copy
+        now = time.time()
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        target = next(d for d in devs if d["id"] == 1)                 # SRV-FS01: has alerts and a full volume
+        target.update(offline=True, lastContact=now - 40 * 86400)
+        snap = Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=fake_ninja.ALERTS, volumes=fake_ninja.VOLUMES)
+        clf = Classifier(load_rules(DEFAULT_RULES))
+        s = build_summary(snap, clf, None, now)
+        names = [a["name"] for a in s["affected"]]
+        self.assertNotIn("SRV-FS01", names)
+        self.assertNotIn("SRV-FS01", [h["name"] for h in s["healthy"]])
+        self.assertNotIn("SRV-FS01", [i["device"] for i in s["updates"]["storage"]["items"]])
+        self.assertEqual(s["hiddenOffline"]["servers"], 1)
+        target["lastContact"] = now - 10 * 86400                          # offline 10 days: still shown
+        s = build_summary(snap, clf, None, now)
+        self.assertIn("SRV-FS01", [a["name"] for a in s["affected"]])
+        self.assertEqual(s["hiddenOffline"]["servers"], 0)
+
     def test_custom_field_condition_text(self):
         from ninjadash.summary import alert_label
         cases = {

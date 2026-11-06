@@ -180,6 +180,9 @@ def cmd_check(args) -> int:
     for srv in s["affected"][:10]:
         _info(f"  {srv['name']} ({srv['org']}): " + "; ".join(i["text"] for i in srv["issues"]))
     _info(f"Workstation issues: {s['workstationTotal']}")
+    h = s["hiddenOffline"]
+    if h["servers"] or h["workstations"]:
+        _info(f"Hidden (offline > {h['days']} days): {h['servers']} server(s), {h['workstations']} workstation(s)")
     for key, label in (("os", "OS patches"), ("apps", "App updates")):
         u = s["updates"][key]
         if u:
