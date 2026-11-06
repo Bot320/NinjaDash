@@ -1,5 +1,5 @@
-/* NinjaDash wall display: fetches /api/summary every 30 s, draws the 1920x1080 screen, and
-   shrinks long lists to what fits ("+N more") so nothing is cut off. */
+/* NinjaDash wall display: fetches /api/summary every 30 s, fills the window at real size (text and UI
+   keep their size on any screen), and shrinks long lists to what fits ("+N more") so nothing is cut off. */
 (function () {
   "use strict";
   const REFRESH_MS = 30000;
@@ -68,12 +68,24 @@
     } catch (e) { /* keep the current state */ }
   }
 
-  // ---- scale the 1920x1080 canvas to the screen ----
+  // ---- fill the window at real size ----
+  // The layout adapts to any window; text and UI keep their size. Only a window smaller than
+  // MIN_W x MIN_H is shrunk as a whole, so the layout never gets cramped.
+  const MIN_W = 1280, MIN_H = 720;
   function fit() {
-    const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    document.getElementById("screen").style.transform = `scale(${scale})`;
+    const w = window.innerWidth, h = window.innerHeight;
+    const scale = Math.min(1, w / MIN_W, h / MIN_H);
+    const el = document.getElementById("screen");
+    el.style.width = `${w / scale}px`;
+    el.style.height = `${h / scale}px`;
+    el.style.transform = scale < 1 ? `scale(${scale})` : "";
   }
-  window.addEventListener("resize", fit);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    fit();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (data) render(); }, 150);   // re-fit lists to the new size
+  });
 
   // ---- status pill + clock ----
   function statusPill() {
@@ -167,7 +179,7 @@
       .map(([o, n]) => `<span class="org-chip">${esc(o)} <b>${n}</b></span>`).join("")}</div>` : "";
     return `<section class="card servers">
       <div class="card-head"><div class="card-title">Servers</div>
-        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy</div></div>
+        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy${hiddenNote(D)}</div></div>
       <div class="srv-body fill">
         ${affected.length
           ? `<div class="affected">${affected.map(card).join("")}<div class="srv-card more-card" style="display:none"></div></div>`
@@ -177,12 +189,30 @@
     </section>`;
   }
 
+  // Windows update names are long; keep the part that tells them apart on a TV
+  const compactName = n => String(n || "")
+    .replace(/Cumulative Update/gi, "CU")
+    .replace(/Servicing Stack Update/gi, "SSU")
+    .replace(/\bfor Windows\b/gi, "Win")
+    .replace(/\bfor Microsoft server operating system,? version\b/gi, "Server")
+    .replace(/\.NET Framework/gi, ".NET")
+    .replace(/\bfor (x64|x86|ARM64)-based Systems\b/gi, "$1")
+    .replace(/\bVersion (\d\d H\d|\d{2}H\d)\b/gi, "$1")
+    .replace(/\s+/g, " ").trim();
+
+  function hiddenNote(D) {
+    const h = D.hiddenOffline || {}, n = (h.servers || 0) + (h.workstations || 0);
+    return n ? ` · ${fmt(n)} offline > ${h.days} d hidden` : "";
+  }
+
   function patchColumn(title, icon, u, emptyText) {
     if (!u) return `<div class="upd"><div class="uh">${icon}${title}</div><div class="na">Not available from NinjaOne for this account.</div></div>`;
+    // "20/40 approved": 20 devices already approved, 20 still waiting (40 need the update)
+    const split = t => `${fmt(t.approved)}/${fmt(t.approved + t.devices)} approved${t.servers ? `<span class="ok"> · ${fmt(t.servers)} srv</span>` : ""}`;
     const count = t => t.servers && t.servers === t.devices ? `${fmt(t.servers)} ${plural(t.servers, "server")}`
       : `${fmt(t.devices)} ${plural(t.devices, "device")}${t.servers ? ` · ${fmt(t.servers)} srv` : ""}`;
-    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
-        <span class="ct">${count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
+    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(compactName(t.name))}</span>
+        <span class="ct">${t.approved ? split(t) : count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
     const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
@@ -257,15 +287,15 @@
     </section>
 
     <section class="card trend">
-      <div class="card-head"><div class="card-title">New incidents · last 14 days</div><div class="card-sub">today highlighted</div></div>
+      <div class="card-head"><div class="card-title">New incidents · 14 days</div></div>
       <div class="trows fill">${["hardware", "backup", "antivirus"].map(k => `
         <div class="trow"><span class="k">${CAT[k](16)}${CATNAME[k]}</span>
-          <div class="spark" data-k="${k}" style="height:58px"></div>
+          <div class="spark" data-k="${k}"></div>
           <span class="tot">${sum(D.trend[k])}<small>14 days</small></span></div>`).join("")}</div>
     </section>`;
 
     fitAll(D);
-    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, 58); });
+    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, Math.max(18, Math.min(58, el.clientHeight || 50))); });
     const crit = new Set((D.affected || []).filter(s => s.state === "critical").map(s => s.org + "/" + s.name));
     previousCritical = crit.size ? crit : new Set(["-"]);
     tick();
@@ -307,7 +337,9 @@
       m.style.display = extra > 0 ? "" : "none";
       m.textContent = extra > 0 ? `+${extra} more ${plural(extra, "issue")}` : "";
     });
-    const layouts = [{ cols3: false, one: false }, { cols3: true, one: false }, { cols3: true, one: true }];
+    const wide = grid.clientWidth >= 1000;                // 3 columns only when the cards stay readable
+    const layouts = wide ? [{ cols3: false, one: false }, { cols3: true, one: false }, { cols3: true, one: true }]
+                         : [{ cols3: false, one: false }, { cols3: false, one: true }];
     for (const l of layouts) {
       grid.classList.toggle("cols-3", l.cols3);
       grid.classList.toggle("one", l.one);

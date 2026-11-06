@@ -36,6 +36,64 @@ class ClassifierTest(unittest.TestCase):
         self.assertEqual(self.clf.tier("MAC", "x"), "workstation")
         self.assertIsNone(self.clf.tier("VMWARE_VM_GUEST", "x"))
 
+    def test_long_offline_devices_are_hidden(self):
+        import copy
+        now = time.time()
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        target = next(d for d in devs if d["id"] == 1)                 # SRV-FS01: has alerts and a full volume
+        target.update(offline=True, lastContact=now - 40 * 86400)
+        snap = Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=fake_ninja.ALERTS, volumes=fake_ninja.VOLUMES)
+        clf = Classifier(load_rules(DEFAULT_RULES))
+        s = build_summary(snap, clf, None, now)
+        names = [a["name"] for a in s["affected"]]
+        self.assertNotIn("SRV-FS01", names)
+        self.assertNotIn("SRV-FS01", [h["name"] for h in s["healthy"]])
+        self.assertNotIn("SRV-FS01", [i["device"] for i in s["updates"]["storage"]["items"]])
+        self.assertEqual(s["hiddenOffline"]["servers"], 1)
+        target["lastContact"] = now - 10 * 86400                          # offline 10 days: still shown
+        s = build_summary(snap, clf, None, now)
+        self.assertIn("SRV-FS01", [a["name"] for a in s["affected"]])
+        self.assertEqual(s["hiddenOffline"]["servers"], 0)
+
+    def test_hide_offline_days_comes_from_the_settings_file(self):
+        import copy
+        import os
+        from unittest import mock
+        from ninjadash.config import load_config
+        now = time.time()
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        next(d for d in devs if d["id"] == 1).update(offline=True, lastContact=now - 40 * 86400)
+        snap = Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=fake_ninja.ALERTS)
+        tmp = Path(tempfile.mkdtemp())
+        for value, hidden in (("60", 0), ("0", 0), ("", 1), ("20", 1)):
+            (tmp / "ninjadash.env").write_text(f"NINJA_CLIENT_ID=\nHIDE_OFFLINE_DAYS={value}   # comment\n")
+            env = {"NINJADASH_ENV": str(tmp / "ninjadash.env"), "NINJADASH_RULES": str(DEFAULT_RULES)}
+            with mock.patch.dict(os.environ, env):
+                os.environ.pop("HIDE_OFFLINE_DAYS", None)
+                cfg = load_config()
+            s = build_summary(snap, Classifier(cfg.rules), None, now)
+            self.assertEqual(s["hiddenOffline"]["servers"], hidden, f"HIDE_OFFLINE_DAYS={value!r}")
+
+    def test_custom_field_condition_text(self):
+        from ninjadash.summary import alert_label
+        cases = {
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt: Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt - Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Benutzerdefinierte Felder Bedingung wurde erfüllt (Vaeem Backup Fehler)": "Vaeem Backup Fehler",
+            "Benutzerdefiniertes Feld Bedingung wurde erfüllt für Vaeem Backup Fehler": "Vaeem Backup Fehler",
+            "Custom Fields condition was met: Veeam backup failed": "Veeam backup failed",
+            "Custom field condition triggered - Veeam backup failed": "Veeam backup failed",
+            "RAID 5 degraded · disk 2 failed": "RAID 5 degraded · disk 2 failed",          # other alerts untouched
+            "Customer portal certificate expires": "Customer portal certificate expires",
+        }
+        for text, want in cases.items():
+            self.assertEqual(alert_label({}, "", text), want, text)
+        # only the generic phrase: use the condition's own name
+        self.assertEqual(alert_label({"sourceName": "Vaeem Backup Fehler"}, "", "Benutzerdefinierte Felder Bedingung wurde erfüllt"),
+                         "Vaeem Backup Fehler")
+        # generic subject, the detail is in the message
+        self.assertEqual(alert_label({}, "Custom Fields condition was met", "Veeam backup failed\nmore text"), "Veeam backup failed")
+
     def test_categories(self):
         cat = lambda text, cond="": self.clf.category([cond] if cond else [], text)[0]
         self.assertEqual(cat("Veeam job 'Daily' finished with Failed"), "backup")

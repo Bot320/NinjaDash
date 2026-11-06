@@ -180,11 +180,16 @@ def cmd_check(args) -> int:
     for srv in s["affected"][:10]:
         _info(f"  {srv['name']} ({srv['org']}): " + "; ".join(i["text"] for i in srv["issues"]))
     _info(f"Workstation issues: {s['workstationTotal']}")
+    h = s["hiddenOffline"]
+    if h["servers"] or h["workstations"]:
+        _info(f"Hidden (offline > {h['days']} days): {h['servers']} server(s), {h['workstations']} workstation(s)")
     for key, label in (("os", "OS patches"), ("apps", "App updates")):
         u = s["updates"][key]
         if u:
             _info(f"{label}: {u['approval']} awaiting approval on {u['approvalDevices']} devices "
-                  f"({u['autoApprove']} approve automatically later),{u['queued']} approved, {u['failed']} failed")
+                  f"({u['autoApprove']} approve automatically later), {u['queued']} approved, {u['failed']} failed")
+            for t in u["top"][:8]:
+                _info(f"  {t['name'][:60]}: {t['devices']} waiting, {t['approved']} approved")
     st = s["updates"]["storage"]
     if st:
         _info(f"Low storage: {st['total']} volumes ≥ {st['warnPercent']:.0f} % full ({st['critical']} critical)")

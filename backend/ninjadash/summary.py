@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -79,6 +80,37 @@ def chip_state(sev: str) -> str:
 
 
 # ---- issue extraction --------------------------------------------------------
+# NinjaOne starts the message of a custom field condition with a fixed phrase, e.g.
+# "Benutzerdefinierte Felder Bedingung wurde erfüllt: Veeam Backup Fehler" or
+# "Custom Fields condition was met - Veeam backup failed". Only the part after it says what's wrong.
+GENERIC_PREFIX = re.compile(
+    r"^\s*(?:benutzerdefinierte[snrm]?\s+feld(?:er)?|custom\s+fields?|user[\s-]*defined\s+fields?)"
+    r"(?:[\s-]*(?:bedingung|condition))?"
+    r"(?:\s+(?:wurde|was|has\s+been|is|ist))?"
+    r"(?:\s+(?:erfüllt|erfuellt|ausgelöst|ausgeloest|met|triggered|reached|erreicht))?"
+    r"(?:\s+(?:für|fuer|for|bei|on))?"
+    r"[\s:\-–—.,;]*", re.IGNORECASE)
+
+
+def alert_label(a: dict, subject: str, message: str) -> str:
+    """The text shown for an alert: subject or first message line, without NinjaOne's generic
+    "custom field condition was met" phrase; falls back to the condition's own name."""
+    message_line = next((ln for ln in str(message).splitlines() if ln.strip()), "")
+    label = str(subject or message_line or "").strip()
+    m = GENERIC_PREFIX.match(label)
+    if m and m.end() > 0:
+        rest = label[m.end():].strip()
+        if rest.startswith(("(", "[", "\"", "'", "„", "“")):
+            rest = rest.strip("()[]\"'„“” ").strip()
+        if not rest and subject and message_line and message_line != label:
+            rest = alert_label(a, "", message_line)      # generic subject: try the message
+        label = rest
+    if not label:
+        src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
+        label = str(first(a, "conditionName", "sourceConfigName", "sourceName", default="") or src.get("name") or "Alert")
+    return label
+
+
 def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
     out = []
     for a in snap.alerts:
@@ -96,8 +128,7 @@ def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
         severity = (rule or {}).get("severity") or clf.severity(a.get("severity"), a.get("priority"))
         if category == "other" and not (dev["tier"] == "server" and clf.shows_other(severity)):
             continue
-        message_line = next((ln for ln in str(message).splitlines() if ln.strip()), "")
-        label = subject or message_line or first(a, "sourceName", default="Alert")
+        label = alert_label(a, subject, message)
         out.append(Issue(dev_id, category, severity, short(label), to_epoch(first(a, "createTime", "activityTime", "updateTime")),
                          f"alert:{first(a, 'uid', 'id', default=label)}"))
     return out
@@ -264,11 +295,14 @@ def patch_reason(p: dict, now: float) -> str:
     return f"status {s}" if s else "no status field"
 
 
-def _top(groups: dict, n: int) -> list:
+def _top(groups: dict, n: int, approved: dict | None = None) -> list:
+    """Updates awaiting approval, servers first. `approved` maps an update name to the devices on
+    which the same update is already approved, so each row can show the split."""
+    approved = approved or {}
     top = sorted(groups.values(), key=lambda g: (-len(g["servers"]), -len(g["devices"]),
                                                  SEVERITY_ORDER.get(g["severity"], 9), g["name"]))
     return [{"name": g["name"], "devices": len(g["devices"]), "servers": len(g["servers"]), "severity": g["severity"],
-             "auto": g["auto"]} for g in top[:n]]
+             "auto": g["auto"], "approved": len(approved.get(g["name"], set()) - g["devices"])} for g in top[:n]]
 
 
 def patch_block(rows: list | None, devices: dict, now: float | None = None) -> dict | None:
@@ -278,6 +312,7 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
     counts = {"approval": 0, "queued": 0, "failed": 0}
     per_state: dict = {k: set() for k in counts}
     groups: dict = {}
+    approved_by_name: dict = {}
     auto_count, auto_next = 0, None
     for p in rows:
         dev_id = first(p, "deviceId", "nodeId")
@@ -289,9 +324,11 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
             continue
         counts[state] += 1
         per_state[state].add(dev_id)
+        name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
+        if state == "queued":
+            approved_by_name.setdefault(name, set()).add(dev_id)
         if state != "approval":
             continue
-        name = short(first(p, "name", "title", "kbNumber", "productIdentifier", "displayName", default="Update"), 80)
         g = groups.setdefault(name, {"name": name, "devices": set(), "servers": set(), "severity": "", "auto": None})
         g["devices"].add(dev_id)
         if dev["tier"] == "server":
@@ -312,7 +349,7 @@ def patch_block(rows: list | None, devices: dict, now: float | None = None) -> d
         "failedDevices": len(per_state["failed"]),
         "autoApprove": auto_count,
         "autoApproveNext": auto_next,
-        "top": _top(groups, 8),
+        "top": _top(groups, 8, approved_by_name),
     }
 
 
@@ -326,7 +363,7 @@ def storage_block(rows: list | None, clf: Classifier, devices: dict) -> dict | N
     items = []
     for v in rows:
         dev = devices.get(first(v, "deviceId", "nodeId"))
-        if not dev or not dev["tier"]:
+        if not dev or not dev["tier"] or dev.get("stale"):
             continue
         try:
             cap = float(first(v, "capacity", "size", "totalSpace", "totalSize"))
@@ -367,12 +404,18 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
             "offline": bool(d.get("offline")),
             "last_contact": to_epoch(first(d, "lastContact", "lastUpdate")),
         }
+    # devices offline longer than HIDE_OFFLINE_DAYS (settings file) are left out of warnings and storage (0 = never)
+    hide_days = float(clf.display.get("hide_offline_days", 30) or 0)
+    for d in devices.values():
+        d["stale"] = bool(hide_days and d["tier"] and d["offline"] and d["last_contact"]
+                          and now - d["last_contact"] > hide_days * 86400)
 
     issues = alert_issues(snap, clf, devices)
     issues += antivirus_issues(snap, clf, devices, now)
     b_issues, backup_stats = backup_issues(snap, clf, devices, now)
     issues += b_issues
     issues += offline_issues(clf, devices, now)
+    issues = [i for i in issues if not devices[i.device_id]["stale"]]
 
     seen, unique = set(), []
     for i in sorted(issues, key=lambda i: (SEV_RANK.get(i.severity, 9), -(i.since or 0))):
@@ -406,7 +449,7 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
     affected.sort(key=lambda s: (s["_rank"], -s["_newest"], s["name"]))
     for s in affected:
         s.pop("_rank"), s.pop("_newest")
-    healthy = sorted(({"name": d["name"], "org": d["org"]} for k, d in servers.items() if k not in by_device),
+    healthy = sorted(({"name": d["name"], "org": d["org"]} for k, d in servers.items() if k not in by_device and not d["stale"]),
                      key=lambda s: (s["org"].lower(), s["name"].lower()))
 
     ws_issues = [dict(issue_json(i), device=devices[i.device_id]["name"], org=devices[i.device_id]["org"])
@@ -453,4 +496,7 @@ def build_summary(snap: Snapshot, clf: Classifier, history, now: float) -> dict:
             "storage": storage_block(snap.volumes, clf, devices),
         },
         "ignoredDevices": sum(1 for d in devices.values() if not d["tier"]),
+        "hiddenOffline": {"servers": sum(1 for d in servers.values() if d["stale"]),
+                          "workstations": sum(1 for d in workstations.values() if d["stale"]),
+                          "days": int(hide_days)},
     }

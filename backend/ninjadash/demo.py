@@ -79,10 +79,12 @@ def _typical(now: float) -> dict:
             "antivirus": [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 2],
         },
         "ignoredDevices": 0,
+        "hiddenOffline": {"servers": 1, "workstations": 7, "days": 30},
         "updates": {
             "os": {"approval": 90, "queued": 323, "failed": 3, "approvalDevices": 67, "approvalServers": 12,
                    "queuedDevices": 67, "failedDevices": 3, "autoApprove": 31, "autoApproveNext": now + 3 * 86400, "top": [
                 {"name": "2026-11 Cumulative Update for Windows Server 2022 (KB5049983)", "devices": 12, "servers": 12, "severity": "critical", "auto": None},
+                {"name": "2026-11 Cumulative Update Preview for Windows 11 Version 24H2 for x64-based Systems with Secure Boot certificate refresh (KB5049985)", "devices": 20, "servers": 0, "severity": "optional", "auto": None, "approved": 20},
                 {"name": "2026-11 Cumulative Update for Windows 11 24H2 (KB5049981)", "devices": 52, "servers": 0, "severity": "critical", "auto": None},
                 {"name": "2026-11 .NET Framework 4.8.1 Update (KB5049620)", "devices": 31, "servers": 0, "severity": "important", "auto": now + 3 * 86400},
                 {"name": "Windows Server 2022 Servicing Stack Update (KB5049610)", "devices": 2, "servers": 2, "severity": "important", "auto": None},
