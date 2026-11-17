@@ -16,7 +16,8 @@ M, H, D = 60, 3600, 86400
 
 def demo_summary(now: float) -> dict:
     s = _typical(now)
-    if os.environ.get("NINJADASH_DEMO_SCENARIO") == "busy":      # stress test for the layout fitting
+    scenario = os.environ.get("NINJADASH_DEMO_SCENARIO")
+    if scenario in ("busy", "crowded"):                           # stress tests for the layout fitting
         extra = [("SRV-PACS01", "Riverside Clinic", "hardware", "RAID 1 degraded · disk 0 failed"),
                  ("SRV-DMS01", "Brightline Legal", "backup", "Backup failed 3× · VSS error"),
                  ("HV-ACME01", "Acme Logistics", "hardware", "Fan 2 failed"),
@@ -27,9 +28,15 @@ def demo_summary(now: float) -> dict:
                  ("SRV-ERP01", "Acme Logistics", "hardware", "Memory errors logged (WHEA)"),
                  ("NAS-01", "Northwind Dental", "hardware", "Synology: Volume 1 degraded"),
                  ("SRV-RMM", "Internal IT", "backup", "Backup repository 97 % full")]
+        if scenario == "crowded":                                 # more servers than even the smallest cards fit
+            extra += [(f"SRV-X{n:02}", "Riverside Clinic", ("backup", "hardware")[n % 2],
+                       ("Backup Status Warnung", "RAID Status Fehler", "Backup Status Fehler", "RAID Status Warnung")[n % 4])
+                      for n in range(1, 31)]
         for i, (n, o, c, t) in enumerate(extra):
-            s["affected"].append({"name": n, "org": o, "state": "offline" if c == "offline" else ("critical" if i % 2 == 0 else "warning"),
-                                  "issues": [{"category": c, "severity": "critical", "text": t, "since": now - (i + 1) * 1800}]})
+            state = "offline" if c == "offline" else ("warning" if "Warnung" in t or (i % 2 and "Fehler" not in t) else "critical")
+            s["affected"].append({"name": n, "org": o, "state": state,
+                                  "issues": [{"category": c, "severity": state, "text": t, "since": now - (i + 1) * 1800}]})
+        s["affected"].sort(key=lambda a: {"critical": 0, "offline": 1, "warning": 2}.get(a["state"], 3))
         taken = {(a["org"], a["name"]) for a in s["affected"]}
         s["healthy"] = [h for h in s["healthy"] if (h["org"], h["name"]) not in taken]
         s["workstations"] = (s["workstations"] * 2)[:10]

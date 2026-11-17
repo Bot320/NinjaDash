@@ -121,17 +121,29 @@ header { grid-column: 1 / -1; display: flex; align-items: center; justify-conten
 .srv-card .hd > div { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srv-card .nm { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .srv-card .org { font-size: 13px; color: var(--text-3); margin-left: 8px; font-weight: 500; }
-.srv-card.more-card { display: grid; place-items: center; color: var(--text-2); font-size: 15px; font-weight: 650; }
-.srv-card.more-card::before { display: none; }
 .issue { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; align-items: center; font-size: 14.5px; margin-top: 8px; }
 .issue > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .issue svg { color: var(--text-2); }
+.issue.critical svg { color: var(--critical); }
+.issue.warning svg { color: var(--warn-ink); }
 .since { font-size: 14px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .more { font-size: 13px; color: var(--text-3); margin-top: 6px; padding-left: 27px; }
 .affected.one .i2 { display: none; }
 .affected.cols-3 .srv-card { padding: 11px 14px 11px 18px; }
 .affected.cols-3 .srv-card .nm { font-size: 16px; }
 .affected.cols-3 .issue { font-size: 14px; margin-top: 7px; }
+/* smaller cards when many servers need attention */
+.affected.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.affected.compact { gap: 7px; }
+.affected.compact .srv-card { padding: 7px 11px 7px 15px; border-radius: 10px; }
+.affected.compact .srv-card .nm { font-size: 15px; }
+.affected.compact .srv-card .org { font-size: 12px; margin-left: 6px; }
+.affected.compact .chip { font-size: 0; gap: 0; padding: 3px 5px; }     /* icon only */
+.affected.compact .issue { font-size: 13px; margin-top: 3px; gap: 6px; grid-template-columns: 16px minmax(0, 1fr) auto; }
+.affected.compact .since { font-size: 12.5px; }
+.affected.compact .more { display: none !important; }
+.srv-body.scrolling { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
 .healthy-line { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--text-3); }
 .healthy-line .lbl { display: inline-flex; align-items: center; gap: 7px; margin-right: 4px; }
 .healthy-line .lbl i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; }

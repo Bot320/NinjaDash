@@ -94,6 +94,41 @@ class ClassifierTest(unittest.TestCase):
         # generic subject, the detail is in the message
         self.assertEqual(alert_label({}, "Custom Fields condition was met", "Veeam backup failed\nmore text"), "Veeam backup failed")
 
+    def test_warning_or_error_from_the_status_text(self):
+        from ninjadash.summary import text_level
+        self.assertEqual(text_level("Vaeem Backup Fehler"), "critical")
+        self.assertEqual(text_level("Backup Status: Warnung"), "warning")
+        self.assertEqual(text_level("RAID Status = Warning"), "warning")
+        self.assertEqual(text_level("Raidwarnung"), "warning")
+        self.assertEqual(text_level("Backup Status von Fehler zu Warnung"), "warning")
+        self.assertEqual(text_level("Backup Status von Kein Fehler zu Fehler"), "critical")
+        self.assertEqual(text_level("RAID Status von kein Fehler zu Warnung"), "warning")
+        self.assertEqual(text_level("RAID 5 degraded"), None)
+        self.assertEqual(text_level("Veeam backup failed"), "critical")
+
+    def test_backup_warning_is_yellow_and_after_errors(self):
+        import copy
+        now = time.time()
+        alerts = [{"uid": "w1", "deviceId": 1, "severity": "MAJOR", "createTime": now - 60,
+                   "subject": "", "message": "Benutzerdefinierte Felder Bedingung wurde erfüllt: Backup Status Warnung"},
+                  {"uid": "e1", "deviceId": 2, "severity": "MAJOR", "createTime": now - 3600,
+                   "subject": "", "message": "Benutzerdefinierte Felder Bedingung wurde erfüllt: Backup Status Fehler"},
+                  {"uid": "r1", "deviceId": 3, "severity": "MAJOR", "createTime": now - 30,
+                   "subject": "", "message": "Benutzerdefinierte Felder Bedingung wurde erfüllt: RAID Status Warnung"}]
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        for d in devs:
+            d["offline"] = False
+        snap = Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=alerts)
+        s = build_summary(snap, Classifier(load_rules(DEFAULT_RULES)), None, now)
+        by_text = {i["text"]: i for srv in s["affected"] for i in srv["issues"]}
+        self.assertEqual(by_text["Backup Status Warnung"]["severity"], "warning")
+        self.assertEqual(by_text["Backup Status Fehler"]["severity"], "critical")
+        self.assertEqual(by_text["RAID Status Warnung"]["severity"], "warning")
+        self.assertEqual(by_text["RAID Status Warnung"]["category"], "hardware")
+        self.assertEqual(s["affected"][0]["state"], "critical")           # errors first, even when older
+        self.assertEqual(s["pillars"]["hardware"]["state"], "warning")
+        self.assertEqual(s["pillars"]["backup"]["state"], "critical")
+
     def test_categories(self):
         cat = lambda text, cond="": self.clf.category([cond] if cond else [], text)[0]
         self.assertEqual(cat("Veeam job 'Daily' finished with Failed"), "backup")

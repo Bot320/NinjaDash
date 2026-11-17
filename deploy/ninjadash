@@ -18,6 +18,7 @@
 #   sudo ninjadash pointer          hide the mouse pointer on the TV now
 #   sudo ninjadash home-assistant   show the Home Assistant configuration incl. token
 #   sudo ninjadash diag             details about the kiosk screen (send this when something looks wrong)
+#   sudo ninjadash rdp-repair       Remote Desktop fails ("Error connecting to Xorg"): rebuild it for the current Xorg
 set -euo pipefail
 ENV=/etc/ninjadash/ninjadash.env
 DM_FILE=/etc/ninjadash/.disabled-display-manager
@@ -60,6 +61,9 @@ case "${1:-help}" in
     need_root check; shift
     exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV="$ENV" \
       PYTHONDONTWRITEBYTECODE=1 python3 -m ninjadash check "$@" ;;
+  rdp-repair)
+    need_root rdp-repair
+    exec bash /opt/ninjadash/deploy/setup-rdp.sh --repair ;;
   edit)
     need_root edit
     "${EDITOR:-nano}" "$ENV"
@@ -225,5 +229,5 @@ rest_command:
 EOF
     ;;
   *)
-    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

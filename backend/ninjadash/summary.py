@@ -111,6 +111,24 @@ def alert_label(a: dict, subject: str, message: str) -> str:
     return label
 
 
+# A status field like "kein Fehler / Warnung / Fehler" triggers one condition with one NinjaOne severity.
+# For backup and hardware alerts the level word in the text decides: the last one wins
+# ("von Fehler zu Warnung" is a warning), words also count inside German compounds ("Backupwarnung").
+NOT_A_PROBLEM = re.compile(r"\b(?:kein(?:e|en)?\s+(?:fehler|warnung(?:en)?)|ohne\s+fehler|no\s+(?:errors?|warnings?)|without\s+errors?)\b",
+                           re.IGNORECASE)
+LEVEL_WORDS = re.compile(r"(?P<warning>warn)|(?P<critical>fehler|error|fail|fehlgeschlagen|kritisch|critical)", re.IGNORECASE)
+
+
+def text_level(text: str) -> str | None:
+    """'warning' or 'critical' from the last level word in the text, None if it has none."""
+    last = None
+    for last in LEVEL_WORDS.finditer(NOT_A_PROBLEM.sub(" ", str(text or ""))):
+        pass
+    if last is None:
+        return None
+    return "warning" if last.group("warning") else "critical"
+
+
 def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
     out = []
     for a in snap.alerts:
@@ -125,10 +143,12 @@ def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
                                         src.get("name"), subject) if x]
         text_for_match = f"{subject} {message} {' '.join(conditions)}"
         category, rule = clf.category(conditions, text_for_match, dev["name"])
+        label = alert_label(a, subject, message)
         severity = (rule or {}).get("severity") or clf.severity(a.get("severity"), a.get("priority"))
+        if not (rule or {}).get("severity") and category in clf.display.get("level_from_text", ["backup", "hardware"]):
+            severity = text_level(label) or text_level(f"{subject} {message}") or severity
         if category == "other" and not (dev["tier"] == "server" and clf.shows_other(severity)):
             continue
-        label = alert_label(a, subject, message)
         out.append(Issue(dev_id, category, severity, short(label), to_epoch(first(a, "createTime", "activityTime", "updateTime")),
                          f"alert:{first(a, 'uid', 'id', default=label)}"))
     return out
