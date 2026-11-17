@@ -9,6 +9,9 @@ Access rules
 - Using a switch from another PC always needs `Authorization: Bearer <SCREEN_TOKEN>`
   (or ?token=...), for reading its state too.
 These switches only change the TV. Nothing here writes to NinjaOne.
+
+Port 80 (HTTP_REDIRECT): when the dashboard is reachable from the network, a tiny second listener sends
+http://ninjadash.local/... on to http://ninjadash.local:8080/..., so nobody has to type the port.
 """
 from __future__ import annotations
 
@@ -17,6 +20,8 @@ import ipaddress
 import json
 import logging
 import mimetypes
+import re
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -175,8 +180,66 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
+HOST_OK = re.compile(r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)")
+
+
+def redirect_target(host_header: str | None, fallback_host: str, port: int, path: str) -> str | None:
+    """Where port 80 sends a request: same name or address, dashboard port, same path."""
+    host = (host_header or "").strip()
+    if host.startswith("["):
+        host = host[: host.find("]") + 1] if "]" in host else ""
+    else:
+        host = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+    if not host:
+        host = fallback_host
+    if not HOST_OK.fullmatch(host or ""):
+        return None
+    if not path.startswith("/") or path.startswith("//"):
+        path = "/"
+    return f"http://{host}:{port}{path}"
+
+
+def make_redirect_handler(port: int, fallback_host: str):
+    class Redirect(BaseHTTPRequestHandler):
+        server_version = "NinjaDash"
+        sys_version = ""
+
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            target = redirect_target(self.headers.get("Host"), fallback_host, port, self.path)
+            if not target:
+                self.send_error(400)
+                return
+            self.send_response(302)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+
+        do_HEAD = do_GET
+
+    return Redirect
+
+
+def start_redirect(host: str, port: int, redirect_port: int) -> Server | None:
+    """Port 80 → dashboard port, only when the dashboard is reachable from the network. Never fatal."""
+    if not redirect_port or redirect_port == port or is_local(host):
+        return None
+    try:
+        r = Server((host, redirect_port), make_redirect_handler(port, "localhost"))
+    except OSError as e:
+        log.warning("Port %d is not available (%s), so the address needs :%d", redirect_port, e.strerror or e, port)
+        return None
+    threading.Thread(target=r.serve_forever, daemon=True, name="redirect").start()
+    log.info("Port %d forwards to port %d (http://<name>/ works without the port)", redirect_port, port)
+    return r
+
+
 def serve(app, host: str, port: int, frontend: Path) -> None:
     httpd = Server((host, port), make_handler(app, frontend))
+    start_redirect(host, port, getattr(app.cfg, "http_redirect_port", 0))
     where = "this PC only" if is_local(host) else f"the network (other PCs: {app.cfg.remote_access})"
     log.info("Dashboard on http://%s:%d/ (reachable from %s)", host, port, where)
     if not is_local(host) and app.cfg.remote_access != "none" and not app.cfg.screen_token:
