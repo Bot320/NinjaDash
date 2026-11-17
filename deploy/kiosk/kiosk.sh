@@ -15,6 +15,12 @@ done
 
 PROFILE="${HOME:-/tmp}/.ninjadash-chromium"
 mkdir -p "$PROFILE"
+# Chromium's profile lock holds the computer name and a process number. After a rename (sudo ninjadash address)
+# or a power cut it is left behind, and Chromium says "The profile appears to be in use by another Chromium
+# process" instead of showing the dashboard. Nothing else uses this profile, so remove a lock nobody holds.
+if ! pgrep -u "$(id -u)" -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1; then
+  rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonCookie" "$PROFILE/SingletonSocket"
+fi
 
 # English browser UI and page language, so Chromium never offers to translate the (English) dashboard
 # on a German system. LANGUAGE only affects Chromium here, not the rest of the PC.

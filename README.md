@@ -444,6 +444,7 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
 | A device is missing from the warnings or Low storage | Devices offline for more than 30 days are hidden (the Servers card says how many). Change it with `sudo ninjadash edit`: `HIDE_OFFLINE_DAYS=60` (0 = show all), then `sudo ninjadash restart` |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |
+| TV: "The profile appears to be in use by another Chromium process" | Fixed in 0.4.17 (a leftover lock after renaming the PC). On older versions: `sudo rm /var/lib/ninjadash-kiosk/.ninjadash-chromium/Singleton*` and `sudo ninjadash restart` |
 | RDP: "Error connecting to Xorg", black screen or disconnects | `sudo ninjadash rdp-repair` (an Xorg update needs xorgxrdp rebuilt) |
 
 ---

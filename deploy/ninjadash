@@ -78,6 +78,9 @@ case "${1:-help}" in
     if [[ $old != "$name" ]]; then
       hostnamectl set-hostname "$name"
       echo "  Computer name: $old → $name (if you are in a Remote Desktop session, reconnect once)"
+      if systemctl is-active --quiet ninjadash-kiosk.service; then
+        systemctl restart ninjadash-kiosk.service && echo "  Restarted the TV picture for the new name"
+      fi
     fi
     systemctl enable avahi-daemon.service >/dev/null 2>&1 || true
     systemctl restart avahi-daemon.service
