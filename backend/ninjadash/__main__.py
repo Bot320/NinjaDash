@@ -11,7 +11,7 @@ from . import __version__
 from .classify import Classifier
 from .config import load_config
 from .ninja import NinjaClient, NinjaError
-from .summary import (alert_parts, alert_severity, field_level, field_text, needs_fields, patch_reason, patch_state, Snapshot, build_summary,
+from .summary import (alert_parts, alert_severity, av_field_ok, av_problem, av_products_by_device, field_level, field_text, needs_fields, patch_reason, patch_state, Snapshot, build_summary,
                       device_name, first)
 
 
@@ -85,7 +85,7 @@ def cmd_alerts(args) -> int:
         return 2
     c = NinjaClient(cfg.api_base, cfg.client_id, cfg.client_secret, cfg.scope)
     clf = Classifier(cfg.rules)
-    print(f"NinjaDash {__version__} · backup and hardware alerts (nothing is changed)")
+    print(f"NinjaDash {__version__} · backup, hardware and antivirus status (nothing is changed)")
     try:
         alerts = c.alerts()
     except NinjaError as e:
@@ -123,6 +123,30 @@ def cmd_alerts(args) -> int:
         _info(f"message: {msg}")
         if hint:
             _info(hint)
+    print("\nAntivirus that NinjaOne sees as off or out of date")
+    try:
+        av = c.query("/v2/queries/antivirus-status", attempts=2)
+    except NinjaError as e:
+        av = None
+        _bad(f"not available: {e}")
+    shown = collections.Counter()
+    for dev, products in av_products_by_device(Snapshot(av_status=av)).items():
+        problem = av_problem(products)
+        if not problem:
+            continue
+        try:
+            ok_field = av_field_ok(c.device_custom_fields(dev))
+            verdict = f"HIDDEN, custom field {ok_field}" if ok_field else "SHOWN, no antivirus status field says OK"
+        except NinjaError as e:
+            verdict = f"SHOWN, custom fields not readable: {e}"
+        prods = ", ".join(f"{first(p, 'productName', 'name', default='?')} {first(p, 'productState', 'state', 'status', default='?')}"
+                          for p in products)
+        shown[(("disabled" if problem[0] == "off" else "definitions old"), prods[:80], verdict[:120])] += 1
+    if av is not None and not shown:
+        _info("none")
+    for (what, prods, verdict), n in sorted(shown.items()):
+        _info(f"×{n}  {what}: {prods}")
+        _info(f"     {verdict}")
     print("\nTake a photo of this screen and send it.")
     return 0
 

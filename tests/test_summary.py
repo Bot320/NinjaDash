@@ -171,6 +171,30 @@ class ClassifierTest(unittest.TestCase):
         self.assertEqual(field_level({"Veeam_Status": {"text": "Warnung"}}, "Veeam Backup"), ("warning", "Veeam_Status = Warnung"))
         self.assertEqual(field_level({"status": "Warnung"}, "Veeam Backup")[0], "warning")   # only one status field: use it
 
+    def test_antivirus_status_field_beats_a_stopped_defender(self):
+        import copy
+        from ninjadash.summary import av_field_ok
+        now = time.time()
+        av = [{"deviceId": 1, "productName": "Windows Defender", "productState": "OFF", "definitionStatus": "UP_TO_DATE"},
+              {"deviceId": 2, "productName": "Windows Defender", "productState": "OFF", "definitionStatus": "UP_TO_DATE"},
+              {"deviceId": 3, "productName": "Windows Defender", "productState": "OFF", "definitionStatus": "UP_TO_DATE"}]
+        fields = {1: {"antivirusName": "Trend Micro", "antivirusStatus": "OK",
+                      "antivirusDetails": "Defender Dienst aktiv: False, Echtzeitschutz: False"},   # the case from NinjaOne
+                  2: {"antivirusStatus": "Fehler"},                                                # script says broken
+                  3: {"otherField": "OK"}}                                                         # no antivirus field
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        for d in devs:
+            d["offline"] = False
+        s = build_summary(Snapshot(orgs=fake_ninja.ORGS, devices=devs, av_status=av, custom_fields=fields),
+                          Classifier(load_rules(DEFAULT_RULES)), None, now)
+        texts = {srv["name"]: [i["text"] for i in srv["issues"]] for srv in s["affected"]}
+        self.assertNotIn("SRV-FS01", texts)                                # Trend Micro runs: no antivirus error
+        self.assertIn("Antivirus disabled (Windows Defender)", texts["SRV-VEEAM"])
+        self.assertIn("Antivirus disabled (Windows Defender)", texts["SRV-SQL01"])
+        self.assertEqual(av_field_ok({"Antivirus_Status": {"text": "Aktiv"}}), "Antivirus_Status = Aktiv")
+        self.assertEqual(av_field_ok({"virenschutzStatus": "ok"}), "virenschutzStatus = ok")
+        self.assertEqual(av_field_ok({"antivirusName": "OK"}), "")              # the name field doesn't count
+
     def test_categories(self):
         cat = lambda text, cond="": self.clf.category([cond] if cond else [], text)[0]
         self.assertEqual(cat("Veeam job 'Daily' finished with Failed"), "backup")

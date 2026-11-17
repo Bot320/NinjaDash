@@ -78,6 +78,23 @@ class ReadOnlyTest(unittest.TestCase):
             fake_ninja.CUSTOM_FIELDS.clear()
             fake_ninja.CUSTOM_FIELDS.update(saved_cf)
 
+    def test_antivirus_ok_field_is_read_and_used(self):
+        saved = dict(fake_ninja.CUSTOM_FIELDS)
+        fake_ninja.CUSTOM_FIELDS.clear()
+        fake_ninja.CUSTOM_FIELDS[21] = {"antivirusStatus": "OK"}                 # device 21: only a stopped Defender
+        try:
+            app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()
+            self.assertIn(("GET", "/v2/device/21/custom-fields"), fake_ninja.REQUESTS)
+            self.assertNotIn(("GET", "/v2/device/1/custom-fields"), fake_ninja.REQUESTS)   # Defender on: not needed
+            av = [w for w in app.summary()["workstations"] if w["category"] == "antivirus" and "disabled" in w["text"]]
+            self.assertEqual(av, [])
+            self.assertEqual({m for m, p in fake_ninja.REQUESTS}, {"GET", "POST"})
+        finally:
+            fake_ninja.CUSTOM_FIELDS.clear()
+            fake_ninja.CUSTOM_FIELDS.update(saved)
+
     def test_broken_optional_endpoint_does_not_stop_the_sync(self):
         import ninjadash.ninja as ninja_mod
         app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
