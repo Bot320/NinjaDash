@@ -79,6 +79,7 @@ class Config:
     demo: bool = False
     screen_token: str = ""
     remote_access: str = "screen"        # what other PCs on the network may use: none | screen | all
+    hide_offline_days: float = 30        # devices offline longer than this: no warnings, no storage (0 = show all)
     schedule_values: dict = field(default_factory=dict)   # SCREEN_ON / SCREEN_OFF / SCREEN_DAYS / SCREEN_OFF_DATES
     frontend_dir: Path = DEFAULT_FRONTEND
     rules_file: Path = DEFAULT_RULES
@@ -102,6 +103,7 @@ def load_config() -> Config:
         if key.startswith("NINJA_") or key in {
             "POLL_FAST", "POLL_SLOW", "LISTEN", "HISTORY_DB", "THEME", "LIGHT_FROM", "LIGHT_UNTIL", "DEMO",
             "SCREEN_TOKEN", "REMOTE_ACCESS", "SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES",
+            "HIDE_OFFLINE_DAYS",
         }:
             values[key] = val
 
@@ -125,6 +127,7 @@ def load_config() -> Config:
         demo=(values.get("DEMO", "") or "").lower() in {"1", "true", "yes", "on"},
         screen_token=values.get("SCREEN_TOKEN", "") or "",
         remote_access=(values.get("REMOTE_ACCESS", "screen") or "screen").lower(),
+        hide_offline_days=_days(values.get("HIDE_OFFLINE_DAYS", "30")),
         schedule_values={k: values.get(k, "") for k in ("SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES")},
     )
     frontend = os.environ.get("NINJADASH_FRONTEND")
@@ -132,7 +135,19 @@ def load_config() -> Config:
         cfg.frontend_dir = Path(frontend)
     cfg.rules_file = find_rules_file()
     cfg.rules = load_rules(cfg.rules_file)
+    cfg.rules.setdefault("display", {})["hide_offline_days"] = cfg.hide_offline_days
     return cfg
+
+
+def _days(text: str) -> float:
+    """HIDE_OFFLINE_DAYS: a number of days; empty or unreadable = 30, 0 = show all."""
+    text = (text or "").strip().lower().removesuffix("d").strip()
+    if not text:
+        return 30
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        return 30
 
 
 def load_rules(path: Path) -> dict:

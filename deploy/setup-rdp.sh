@@ -3,6 +3,8 @@
 #
 #   sudo ./deploy/setup-rdp.sh            set up RDP for the user who runs sudo
 #   sudo ./deploy/setup-rdp.sh --user NAME
+#   sudo ninjadash rdp-repair             RDP stopped working ("Error connecting to Xorg"), usually after
+#                                         a system update brought a new Xorg: rebuilds xorgxrdp for it
 #
 # Connect with any RDP client (Windows "Remote Desktop Connection", Remmina, the Microsoft
 # Remote Desktop app) to the mini PC's address and log in with that Linux user's password.
@@ -19,11 +21,13 @@ warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
 RDP_USER="${SUDO_USER:-}"
+REPAIR=0
 ORIG_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --user) RDP_USER="${2:-}"; shift ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --repair) REPAIR=1 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
   shift
@@ -33,6 +37,61 @@ done
 id "$RDP_USER" &>/dev/null || die "User $RDP_USER does not exist."
 HOME_DIR=$(getent passwd "$RDP_USER" | cut -d: -f6)
 GROUP=$(id -gn "$RDP_USER")
+
+aur() {  # aur ARGS...: run the AUR helper as the normal user (it asks for the sudo password itself)
+  if command -v paru >/dev/null; then
+    sudo -u "$RDP_USER" paru -S --noconfirm --skipreview --nocheck "$@"
+  elif command -v yay >/dev/null; then
+    sudo -u "$RDP_USER" yay -S --noconfirm --answerdiff None --answerclean None --mflags --nocheck "$@"
+  else
+    die "No AUR helper found. Install one first: sudo pacman -S paru"
+  fi
+}
+
+install_hook() {  # remind on every Xorg update that xorgxrdp has to be rebuilt
+  install -d /etc/pacman.d/hooks
+  cat > /etc/pacman.d/hooks/ninjadash-xorgxrdp.hook <<'EOF'
+# Installed by NinjaDash setup-rdp.sh. xorgxrdp (AUR) is built for one Xorg version; after an Xorg
+# update Remote Desktop fails with "Error connecting to Xorg" until it is rebuilt.
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = xorg-server
+
+[Action]
+Description = NinjaDash: Xorg was updated. Remote Desktop works again after: sudo ninjadash rdp-repair
+When = PostTransaction
+Exec = /usr/bin/true
+EOF
+}
+
+if [[ $REPAIR == 1 ]]; then
+  say "Why Remote Desktop failed (last Xorg log of $RDP_USER)"
+  LOG=$(ls -t "$HOME_DIR"/.xorgxrdp.*.log "$HOME_DIR"/.local/share/xorg/Xorg.1[0-9].log 2>/dev/null | head -1 || true)
+  if [[ -n $LOG ]]; then
+    grep -E "\(EE\)|ABI|version mismatch|Failed to load|undefined symbol" "$LOG" | grep -v "^\s*(WW)" | tail -8 | sed 's/^/    /' \
+      || echo "    no errors in $LOG"
+  else
+    echo "    no Xorg log found"
+  fi
+  echo "    Xorg now: $(pacman -Q xorg-server 2>/dev/null)"
+  echo "    xorgxrdp: $(pacman -Q xorgxrdp 2>/dev/null || echo 'not installed')  ·  xrdp: $(pacman -Q xrdp 2>/dev/null || echo 'not installed')"
+
+  say "Rebuilding xorgxrdp and xrdp for this Xorg (compiles, a few minutes; it may ask for your password)"
+  aur --rebuild --redownload xorgxrdp xrdp || die "The rebuild failed. Scroll up for the build error, or send a photo of it."
+  ok "Rebuilt: $(pacman -Q xorgxrdp) · $(pacman -Q xrdp)"
+
+  say "Ending stuck Remote Desktop sessions and restarting RDP"
+  pkill -u "$RDP_USER" -x Xorg 2>/dev/null && ok "Ended an old RDP session of $RDP_USER" || true
+  pkill -u "$RDP_USER" -f xrdp-chansrv 2>/dev/null || true
+  systemctl restart xrdp-sesman.service xrdp.service 2>/dev/null || systemctl restart xrdp.service
+  systemctl is-active --quiet xrdp.service && ok "xrdp is running" || warn "xrdp did not start: journalctl -u xrdp -u xrdp-sesman"
+  install_hook
+  ok "pacman will remind you of this command after the next Xorg update"
+  echo
+  say "Done. Connect with Remote Desktop again. The TV is not affected."
+  exit 0
+fi
 
 say "Installing the XFCE desktop for Remote Desktop sessions"
 pacman -S --needed --noconfirm xorg-server xfce4-session xfwm4 xfce4-panel xfdesktop xfce4-settings \
@@ -46,16 +105,12 @@ if pacman -Q xrdp xorgxrdp &>/dev/null; then
 else
   # --nocheck: xrdp 0.10.6.1's unit tests 7-10 (login-screen bitmap scaling, test_bitmap_load.c) fail
   # with the current imlib2 on Arch. Known on the AUR page since 2026-09; xrdp itself works fine.
-  if command -v paru >/dev/null; then
-    sudo -u "$RDP_USER" paru -S --needed --noconfirm --skipreview --nocheck xrdp xorgxrdp
-  elif command -v yay >/dev/null; then
-    sudo -u "$RDP_USER" yay -S --needed --noconfirm --answerdiff None --answerclean None --mflags --nocheck xrdp xorgxrdp
-  else
-    die "No AUR helper found. Install one first: sudo pacman -S paru"
-  fi
+  aur --needed xrdp xorgxrdp
   pacman -Q xrdp xorgxrdp &>/dev/null || die "xrdp/xorgxrdp did not install. Scroll up for the build error."
   ok "xrdp installed"
 fi
+
+install_hook
 
 say "Setting up the RDP session for $RDP_USER"
 XINITRC="$HOME_DIR/.xinitrc"

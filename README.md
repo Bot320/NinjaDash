@@ -94,6 +94,7 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `sudo ninjadash logs` | Follows the log live (Ctrl+C to stop) |
 | `sudo ninjadash restart` | Restarts the service and the kiosk, e.g. after editing settings or rules |
 | `sudo ninjadash edit` | Opens the settings file (`/etc/ninjadash/ninjadash.env`) in nano |
+| `sudo ninjadash rdp-repair` | Remote Desktop fails after an update: rebuilds xorgxrdp for the new Xorg, restarts RDP |
 | `sudo ninjadash check` | Tests the NinjaOne login and shows what each tile will show. Changes nothing in NinjaOne |
 | `sudo ninjadash check --fields` | The same, plus the field names NinjaOne returns (send this when something looks wrong) |
 | `sudo ninjadash patches` | The patch statuses and fields exactly as NinjaOne sends them, on one screen (take a photo when the patch numbers look wrong) |
@@ -313,7 +314,8 @@ Connect from the same network (or a VPN) with *Remote Desktop Connection* (Windo
 
 - KDE isn't available over RDP: xrdp needs X11, and KDE Plasma 6.8 is Wayland-only. Use `sudo ninjadash desktop` to put KDE on the TV instead.
 - xrdp is built from the AUR. Its unit tests 7–10 currently fail on Arch (login-screen image scaling), which is harmless; the script skips them. To rebuild by hand: `paru -S --needed --nocheck xrdp xorgxrdp`.
-- After an Xorg update, if RDP shows a black screen or disconnects: `paru -S --rebuild --nocheck xorgxrdp`.
+- After an Xorg update RDP fails with *"Error connecting to Xorg - check log"* (or a black screen):
+  `sudo ninjadash rdp-repair` rebuilds xorgxrdp for the new Xorg and restarts RDP. pacman reminds you after each Xorg update.
 - Don't forward port 3389 on the router.
 
 ---
@@ -402,6 +404,7 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 | `SCREEN_ON` / `SCREEN_OFF` | empty | Built-in screen schedule (`sudo ninjadash schedule set …`). Empty = off |
 | `SCREEN_DAYS` | `mon-fri` | Days the screen comes on; other days it stays off |
 | `SCREEN_OFF_DATES` | empty | Extra days off: `2026-12-24,2026-12-25` or `2026-12-24..2027-01-01` |
+| `HIDE_OFFLINE_DAYS` | `30` | Devices offline for longer get no warnings and no Low storage entry (the Servers card says how many). `0` = show all |
 | `HISTORY_DB` | `/var/lib/ninjadash/history.sqlite` | 14-day incident history |
 
 ---
@@ -436,8 +439,9 @@ Settings, rules, token and history are kept. The installer remembers that Home A
 | OS patches: "0 awaiting approval" but NinjaOne shows devices waiting | Update to 0.4.4. NinjaOne's API reports some patches that still need approval as *approved* with an extra field; they now count as awaiting approval, and an "auto 7 Nov" note shows when a policy approves one later. Still wrong? `sudo ninjadash patches` shows for every status *why* it was counted where it is; send a photo |
 | Updates & storage says "Not available" | `sudo ninjadash check`; the API client may lack access to patch or volume data |
 | `ninjadash desktop` shows a text login instead of KDE | Update to 0.2.2 or newer; it now switches to the console SDDM runs on, or prints SDDM's log if it failed |
+| A device is missing from the warnings or Low storage | Devices offline for more than 30 days are hidden (the Servers card says how many). Change it with `sudo ninjadash edit`: `HIDE_OFFLINE_DAYS=60` (0 = show all), then `sudo ninjadash restart` |
 | An alert lands in the wrong tile | `sudo ninjadash check`, then add a rule in `/etc/ninjadash/classify.toml` |
-| RDP: black screen / disconnects | `paru -S --rebuild --nocheck xorgxrdp`, then `sudo systemctl restart xrdp xrdp-sesman` |
+| RDP: "Error connecting to Xorg", black screen or disconnects | `sudo ninjadash rdp-repair` (an Xorg update needs xorgxrdp rebuilt) |
 
 ---
 

@@ -113,6 +113,11 @@ if [[ ! -f $ETC/ninjadash.env ]]; then
 else
   chown root:ninjadash "$ETC/ninjadash.env"; chmod 640 "$ETC/ninjadash.env"
   ok "Kept your existing $ETC/ninjadash.env"
+  if ! grep -q '^HIDE_OFFLINE_DAYS=' "$ETC/ninjadash.env"; then
+    printf '\n# Devices offline for more than this many days get no warnings and no Low storage entry (0 = show all)\nHIDE_OFFLINE_DAYS=30\n' \
+      >> "$ETC/ninjadash.env"
+    ok "Added HIDE_OFFLINE_DAYS=30 to the settings (change it with: sudo ninjadash edit)"
+  fi
 fi
 if [[ ! -f $ETC/classify.toml ]]; then
   install -m 640 -o root -g ninjadash "$SRC/deploy/classify.local.toml" "$ETC/classify.toml"

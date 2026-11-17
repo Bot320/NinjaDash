@@ -1,5 +1,5 @@
-/* NinjaDash wall display: fetches /api/summary every 30 s, draws the 1920x1080 screen, and
-   shrinks long lists to what fits ("+N more") so nothing is cut off. */
+/* NinjaDash wall display: fetches /api/summary every 30 s, fills the window at real size (text and UI
+   keep their size on any screen), and shrinks long lists to what fits ("+N more") so nothing is cut off. */
 (function () {
   "use strict";
   const REFRESH_MS = 30000;
@@ -68,12 +68,24 @@
     } catch (e) { /* keep the current state */ }
   }
 
-  // ---- scale the 1920x1080 canvas to the screen ----
+  // ---- fill the window at real size ----
+  // The layout adapts to any window; text and UI keep their size. Only a window smaller than
+  // MIN_W x MIN_H is shrunk as a whole, so the layout never gets cramped.
+  const MIN_W = 1280, MIN_H = 720;
   function fit() {
-    const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    document.getElementById("screen").style.transform = `scale(${scale})`;
+    const w = window.innerWidth, h = window.innerHeight;
+    const scale = Math.min(1, w / MIN_W, h / MIN_H);
+    const el = document.getElementById("screen");
+    el.style.width = `${w / scale}px`;
+    el.style.height = `${h / scale}px`;
+    el.style.transform = scale < 1 ? `scale(${scale})` : "";
   }
-  window.addEventListener("resize", fit);
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    fit();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (data) render(); }, 150);   // re-fit lists to the new size
+  });
 
   // ---- status pill + clock ----
   function statusPill() {
@@ -158,7 +170,7 @@
     // Every card carries up to 2 issues; fitServers() picks the layout (2 or 3 columns, 1 or 2 issues).
     const card = s => `<div class="srv-card${isNew(s) ? " flash" : ""}" style="--state:${STATEVAR[s.state] || STATEVAR.warning}" data-issues="${s.issues.length}">
         <div class="hd"><div><span class="nm">${esc(s.name)}</span><span class="org">${esc(s.org)}</span></div>${chip(s.state)}</div>
-        ${s.issues.slice(0, 2).map((i, n) => `<div class="issue i${n + 1}">${(CAT[i.category] || CAT.other)(16)}<span>${esc(issueText(i))}</span><span class="since">${ago(i.since)}</span></div>`).join("")}
+        ${s.issues.slice(0, 2).map((i, n) => `<div class="issue i${n + 1} ${i.severity === "critical" ? "critical" : i.severity === "warning" ? "warning" : ""}">${(CAT[i.category] || CAT.other)(16)}<span>${esc(issueText(i))}</span><span class="since">${ago(i.since)}</span></div>`).join("")}
         <div class="more" style="display:none"></div>
       </div>`;
     const byOrg = {};
@@ -167,22 +179,40 @@
       .map(([o, n]) => `<span class="org-chip">${esc(o)} <b>${n}</b></span>`).join("")}</div>` : "";
     return `<section class="card servers">
       <div class="card-head"><div class="card-title">Servers</div>
-        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy</div></div>
+        <div class="card-sub">${affected.length ? `${affected.length} need attention · ` : ""}${healthy.length} healthy${hiddenNote(D)}</div></div>
       <div class="srv-body fill">
         ${affected.length
-          ? `<div class="affected">${affected.map(card).join("")}<div class="srv-card more-card" style="display:none"></div></div>`
+          ? `<div class="affected">${affected.map(card).join("")}</div>`
           : `<div class="all-clear">${BIG_OK}<div><div class="t">All ${total} servers healthy</div><div class="m">No hardware, backup or antivirus issues on any server.</div></div></div>`}
         ${healthyLine}
       </div>
     </section>`;
   }
 
+  // Windows update names are long; keep the part that tells them apart on a TV
+  const compactName = n => String(n || "")
+    .replace(/Cumulative Update/gi, "CU")
+    .replace(/Servicing Stack Update/gi, "SSU")
+    .replace(/\bfor Windows\b/gi, "Win")
+    .replace(/\bfor Microsoft server operating system,? version\b/gi, "Server")
+    .replace(/\.NET Framework/gi, ".NET")
+    .replace(/\bfor (x64|x86|ARM64)-based Systems\b/gi, "$1")
+    .replace(/\bVersion (\d\d H\d|\d{2}H\d)\b/gi, "$1")
+    .replace(/\s+/g, " ").trim();
+
+  function hiddenNote(D) {
+    const h = D.hiddenOffline || {}, n = (h.servers || 0) + (h.workstations || 0);
+    return n ? ` · ${fmt(n)} offline > ${h.days} d hidden` : "";
+  }
+
   function patchColumn(title, icon, u, emptyText) {
     if (!u) return `<div class="upd"><div class="uh">${icon}${title}</div><div class="na">Not available from NinjaOne for this account.</div></div>`;
+    // "20/40 approved": 20 devices already approved, 20 still waiting (40 need the update)
+    const split = t => `${fmt(t.approved)}/${fmt(t.approved + t.devices)} approved${t.servers ? `<span class="ok"> · ${fmt(t.servers)} srv</span>` : ""}`;
     const count = t => t.servers && t.servers === t.devices ? `${fmt(t.servers)} ${plural(t.servers, "server")}`
       : `${fmt(t.devices)} ${plural(t.devices, "device")}${t.servers ? ` · ${fmt(t.servers)} srv` : ""}`;
-    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(t.name)}</span>
-        <span class="ct">${count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
+    const rows = (u.top || []).map(t => `<div class="urow"><span class="dot ${sevDot(t.severity)}"></span><span class="nm">${esc(compactName(t.name))}</span>
+        <span class="ct">${t.approved ? split(t) : count(t)}${t.auto ? ` · auto ${dayLabel(t.auto)}` : ""}</span></div>`).join("");
     const meta = [`on <b>${fmt(u.approvalDevices)}</b> ${plural(u.approvalDevices, "device")}`];
     if (u.approvalServers) meta.push(`<b>${fmt(u.approvalServers)}</b> ${plural(u.approvalServers, "server")}`);
     const onDev = n => n == null ? "" : ` on ${fmt(n)} ${plural(n, "device")}`;
@@ -257,15 +287,15 @@
     </section>
 
     <section class="card trend">
-      <div class="card-head"><div class="card-title">New incidents · last 14 days</div><div class="card-sub">today highlighted</div></div>
+      <div class="card-head"><div class="card-title">New incidents · 14 days</div></div>
       <div class="trows fill">${["hardware", "backup", "antivirus"].map(k => `
         <div class="trow"><span class="k">${CAT[k](16)}${CATNAME[k]}</span>
-          <div class="spark" data-k="${k}" style="height:58px"></div>
+          <div class="spark" data-k="${k}"></div>
           <span class="tot">${sum(D.trend[k])}<small>14 days</small></span></div>`).join("")}</div>
     </section>`;
 
     fitAll(D);
-    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, 58); });
+    document.querySelectorAll(".spark").forEach(el => { el.innerHTML = columns(D.trend[el.dataset.k] || [], el.clientWidth || 300, Math.max(18, Math.min(58, el.clientHeight || 50))); });
     const crit = new Set((D.affected || []).filter(s => s.state === "critical").map(s => s.org + "/" + s.name));
     previousCritical = crit.size ? crit : new Set(["-"]);
     tick();
@@ -292,36 +322,64 @@
     });
   }
 
-  // Servers: try the most detailed layout first and step down until everything fits:
-  // 2 columns with 2 issues each → 3 columns → 3 columns with 1 issue → "+N more servers".
+  // Servers: try the most detailed layout first and step down until every server fits:
+  // 2 columns with 2 issues each → 3 columns → 1 issue → compact cards → 4 compact columns.
   // The "healthy" line is dropped before detail is lost. Cards are sorted worst first.
+  // If even the smallest layout is too long, nothing is hidden: the list scrolls slowly by itself.
   function fitServers() {
     const body = document.querySelector(".srv-body");
     if (!body) return;
+    body.classList.remove("scrolling");
+    body.scrollTop = 0;
     const line = body.querySelector(".healthy-line");
     const grid = body.querySelector(".affected");
     if (!grid) { if (line && overflows(body)) line.style.display = "none"; return; }
-    const cards = [...grid.querySelectorAll(".srv-card:not(.more-card)")];
+    const cards = [...grid.querySelectorAll(".srv-card")];
     const setMore = perCard => cards.forEach(c => {
       const extra = Number(c.dataset.issues) - perCard, m = c.querySelector(".more");
       m.style.display = extra > 0 ? "" : "none";
       m.textContent = extra > 0 ? `+${extra} more ${plural(extra, "issue")}` : "";
     });
-    const layouts = [{ cols3: false, one: false }, { cols3: true, one: false }, { cols3: true, one: true }];
+    const wide = grid.clientWidth >= 1000;                // 3+ columns only when the cards stay readable
+    const L = (cols, one, compact) => ({ cols, one, compact });
+    const layouts = wide ? [L(2, false, false), L(3, false, false), L(3, true, false), L(3, true, true), L(4, true, true)]
+                         : [L(2, false, false), L(2, true, false), L(2, true, true), ...(grid.clientWidth >= 700 ? [L(3, true, true)] : [])];
     for (const l of layouts) {
-      grid.classList.toggle("cols-3", l.cols3);
+      grid.classList.toggle("cols-3", l.cols === 3);
+      grid.classList.toggle("cols-4", l.cols === 4);
       grid.classList.toggle("one", l.one);
+      grid.classList.toggle("compact", l.compact);
       setMore(l.one ? 1 : 2);
       if (line) line.style.display = "";
       if (!overflows(body)) return;
       if (line) line.style.display = "none";
       if (!overflows(body)) return;
     }
-    const more = grid.querySelector(".more-card");
-    more.style.display = "";
-    const hidden = fitItems(body, cards, n => { more.textContent = `+${n} more ${plural(n, "server")}`; });
-    if (!hidden) more.style.display = "none";
+    body.classList.add("scrolling");                      // autoScroll() moves it
   }
+
+  // Slow, calm scrolling of a server list that doesn't fit: pause at the top (worst servers),
+  // glide down, pause, glide back up. Driven by the clock, so a re-render doesn't restart it.
+  const SCROLL_SPEED = 24, SCROLL_PAUSE = 6000, scrollEpoch = performance.now();
+  function autoScroll(now) {
+    const el = document.querySelector(".srv-body.scrolling");
+    if (el) {
+      const range = el.scrollHeight - el.clientHeight;
+      if (range > 0) {
+        const down = range / SCROLL_SPEED * 1000, up = down / 3, period = 2 * SCROLL_PAUSE + down + up;
+        const t = (now - scrollEpoch) % period;
+        const ease = x => x * x * (3 - 2 * x);
+        const y = t < SCROLL_PAUSE ? 0
+          : t < SCROLL_PAUSE + down ? range * ease((t - SCROLL_PAUSE) / down)
+          : t < 2 * SCROLL_PAUSE + down ? range
+          : range * (1 - ease((t - 2 * SCROLL_PAUSE - down) / up));
+        const top = Math.round(y);
+        if (el.scrollTop !== top) el.scrollTop = top;
+      }
+    }
+    requestAnimationFrame(autoScroll);
+  }
+  requestAnimationFrame(autoScroll);
 
   async function load() {
     try {

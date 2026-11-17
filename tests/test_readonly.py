@@ -193,6 +193,16 @@ class UpdatesPanelTest(unittest.TestCase):
         self.assertEqual((cu["devices"], cu["auto"]), (2, now + 2 * day))
         self.assertIsNone(next(t for t in b["top"] if t["name"] == "SSU")["auto"])
 
+    def test_rows_show_how_many_already_approved(self):
+        from ninjadash.summary import patch_block
+        devices = {i: {"tier": "workstation"} for i in range(1, 7)}
+        rows = [{"deviceId": i, "name": "Preview CU", "status": "MANUAL"} for i in (1, 2, 3, 4)] + \
+               [{"deviceId": i, "name": "Preview CU", "status": "APPROVED"} for i in (5, 6)] + \
+               [{"deviceId": 1, "name": "Defender", "status": "MANUAL"}]
+        top = {t["name"]: t for t in patch_block(rows, devices)["top"]}
+        self.assertEqual((top["Preview CU"]["devices"], top["Preview CU"]["approved"]), (4, 2))
+        self.assertEqual(top["Defender"]["approved"], 0)
+
     def test_app_patches(self):
         apps = self.u["apps"]
         self.assertEqual((apps["approval"], apps["queued"]), (3, 1))
