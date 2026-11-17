@@ -22,6 +22,7 @@ class Snapshot:
     os_patches: list | None = None       # /v2/queries/os-patches
     sw_patches: list | None = None       # /v2/queries/software-patches (third-party apps)
     volumes: list | None = None          # /v2/queries/volumes
+    custom_fields: dict = field(default_factory=dict)   # device id -> {field: value}, only for alerts without a level word
 
 
 @dataclass
@@ -111,9 +112,11 @@ def alert_label(a: dict, subject: str, message: str) -> str:
     return label
 
 
-# A status field like "kein Fehler / Warnung / Fehler" triggers one condition with one NinjaOne severity.
-# For backup and hardware alerts the level word in the text decides: the last one wins
-# ("von Fehler zu Warnung" is a warning), words also count inside German compounds ("Backupwarnung").
+# A status field like "kein Fehler / Warnung / Fehler" can trigger one condition with one NinjaOne severity.
+# For backup and hardware alerts a warning word in the text can LOWER the severity to a warning; the last
+# level word wins ("von Fehler zu Warnung" is a warning), also inside German compounds ("Backupwarnung").
+# Text never raises the severity: a condition or field NAMED "Veeam Backup Fehler" that NinjaOne itself
+# sends as a warning stays a warning.
 NOT_A_PROBLEM = re.compile(r"\b(?:kein(?:e|en)?\s+(?:fehler|warnung(?:en)?)|ohne\s+fehler|no\s+(?:errors?|warnings?)|without\s+errors?)\b",
                            re.IGNORECASE)
 LEVEL_WORDS = re.compile(r"(?P<warning>warn)|(?P<critical>fehler|error|fail|fehlgeschlagen|kritisch|critical)", re.IGNORECASE)
@@ -129,6 +132,73 @@ def text_level(text: str) -> str | None:
     return "warning" if last.group("warning") else "critical"
 
 
+def field_text(value) -> str:
+    """A custom field value as text (dropdowns may come as {"text"/"name"/"value": ...})."""
+    if isinstance(value, dict):
+        value = first(value, "text", "name", "label", "value", default="")
+    return value if isinstance(value, str) else ""
+
+
+def field_level(fields: dict, label: str) -> tuple[str | None, str]:
+    """Level ('warning' / 'critical') from the device's status custom field that belongs to this alert,
+    e.g. veeamStatus = "Warnung" for "Veeam Backup & Replication prüfen". Returns (level, "name = value")."""
+    words = {w for w in re.findall(r"[a-zäöüß]+", label.lower()) if len(w) >= 4}
+    best, best_score = None, -1
+    candidates = []
+    for name, value in (fields or {}).items():
+        text = field_text(value)
+        lvl = text_level(text) if len(text) <= 60 else None      # short status values only, not long notes
+        if not lvl:
+            continue
+        candidates.append((name, text, lvl))
+        score = sum(1 for w in words if w in str(name).lower())
+        if score > best_score:
+            best, best_score = (name, text, lvl), score
+    if best and (best_score > 0 or len(candidates) == 1):
+        return best[2], f"{best[0]} = {best[1]}"
+    return None, ""
+
+
+def alert_severity(a: dict, clf: Classifier, category: str, rule: dict | None,
+                   label: str, subject: str, message: str, fields: dict | None = None) -> tuple[str, str]:
+    """(dashboard severity, why) for one alert. NinjaOne's severity is the base; for backup and hardware
+    alerts a warning in the text, or else in the device's status custom field, lowers it to a warning."""
+    if (rule or {}).get("severity"):
+        return rule["severity"], f"rule '{rule['name']}'"
+    sev = clf.severity(a.get("severity"), a.get("priority"))
+    why = f"NinjaOne severity {a.get('severity') or '-'} / priority {a.get('priority') or '-'}"
+    if category not in clf.display.get("level_from_text", ["backup", "hardware"]) or SEV_RANK.get(sev, 9) >= SEV_RANK["warning"]:
+        return sev, why
+    levels = (text_level(label), text_level(f"{subject} {message}"))
+    if "warning" in levels:
+        return "warning", why + ", lowered: the text says warning"
+    if any(levels):
+        return sev, why + ", the text says error"
+    lvl, which = field_level(fields or {}, label)
+    if lvl == "warning":
+        return "warning", why + f", lowered: custom field {which}"
+    if lvl:
+        return sev, why + f", custom field {which}"
+    return sev, why + (", no status custom field found" if fields is not None else "")
+
+
+def needs_fields(a: dict, clf: Classifier) -> bool:
+    """True for a backup/hardware alert whose text has no warning/error word (its custom field decides)."""
+    subject, message, category, rule, label = alert_parts(a, clf)
+    return (category in clf.display.get("level_from_text", ["backup", "hardware"]) and not (rule or {}).get("severity")
+            and not text_level(label) and not text_level(f"{subject} {message}"))
+
+
+def alert_parts(a: dict, clf: Classifier, device_name: str = ""):
+    subject = first(a, "subject", default="") or ""
+    message = first(a, "message", default="") or ""
+    src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
+    conditions = [str(x) for x in (a.get("sourceName"), a.get("conditionName"), a.get("sourceConfigName"),
+                                    src.get("name"), subject) if x]
+    category, rule = clf.category(conditions, f"{subject} {message} {' '.join(conditions)}", device_name)
+    return subject, message, category, rule, alert_label(a, subject, message)
+
+
 def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
     out = []
     for a in snap.alerts:
@@ -136,17 +206,8 @@ def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
         dev = devices.get(dev_id)
         if not dev or not dev["tier"]:
             continue
-        subject = first(a, "subject", default="")
-        message = first(a, "message", default="")
-        src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
-        conditions = [str(x) for x in (a.get("sourceName"), a.get("conditionName"), a.get("sourceConfigName"),
-                                        src.get("name"), subject) if x]
-        text_for_match = f"{subject} {message} {' '.join(conditions)}"
-        category, rule = clf.category(conditions, text_for_match, dev["name"])
-        label = alert_label(a, subject, message)
-        severity = (rule or {}).get("severity") or clf.severity(a.get("severity"), a.get("priority"))
-        if not (rule or {}).get("severity") and category in clf.display.get("level_from_text", ["backup", "hardware"]):
-            severity = text_level(label) or text_level(f"{subject} {message}") or severity
+        subject, message, category, rule, label = alert_parts(a, clf, dev["name"])
+        severity, _ = alert_severity(a, clf, category, rule, label, subject, message, snap.custom_fields.get(dev_id))
         if category == "other" and not (dev["tier"] == "server" and clf.shows_other(severity)):
             continue
         out.append(Issue(dev_id, category, severity, short(label), to_epoch(first(a, "createTime", "activityTime", "updateTime")),

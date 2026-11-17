@@ -55,6 +55,29 @@ class ReadOnlyTest(unittest.TestCase):
         self.assertGreaterEqual(len(methods), 9)                   # devices, alerts, AV, patches, volumes, ...
         self.assertEqual(app.client.scope, "monitoring")            # NINJA_SCOPE=management is ignored
 
+    def test_veeam_alert_takes_its_colour_from_the_custom_field(self):
+        now = time.time()
+        msg = "Benutzerdefinierte Felder Bedingung wurde erfüllt: 'Veeam Backup & Replication prüfen'"
+        saved_alerts, saved_cf = list(fake_ninja.ALERTS), dict(fake_ninja.CUSTOM_FIELDS)
+        fake_ninja.ALERTS[:] = [{"uid": "veeam1", "deviceId": 2, "severity": "MAJOR", "priority": "MEDIUM",
+                                 "createTime": now - 60, "subject": "", "message": msg}]
+        fake_ninja.CUSTOM_FIELDS.clear()
+        fake_ninja.CUSTOM_FIELDS[2] = {"veeamStatus": "Warnung", "raidStatus": "Kein Fehler"}
+        try:
+            app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()
+            self.assertIn(("GET", "/v2/device/2/custom-fields"), fake_ninja.REQUESTS)
+            veeam = next(s for s in app.summary()["affected"] if s["name"] == "SRV-VEEAM")
+            self.assertEqual(veeam["state"], "warning")
+            fake_ninja.REQUESTS.clear()
+            app.poll_once()                                          # cached: not asked again every minute
+            self.assertNotIn(("GET", "/v2/device/2/custom-fields"), fake_ninja.REQUESTS)
+        finally:
+            fake_ninja.ALERTS[:] = saved_alerts
+            fake_ninja.CUSTOM_FIELDS.clear()
+            fake_ninja.CUSTOM_FIELDS.update(saved_cf)
+
     def test_broken_optional_endpoint_does_not_stop_the_sync(self):
         import ninjadash.ninja as ninja_mod
         app = make_app(f"NINJA_BASE_URL={self.base}\nNINJA_CLIENT_ID=x\nNINJA_CLIENT_SECRET=test-secret")
