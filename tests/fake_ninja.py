@@ -98,6 +98,7 @@ VOLUMES = [
 ]
 REQUESTS: list = []          # (method, path) of every request, for the read-only test
 HIDE_MANUAL = False          # True: the plain os-patches list leaves out MANUAL ones (only ?status=MANUAL has them)
+CUSTOM_FIELDS = {}           # device id -> {field: value}, served at /v2/device/<id>/custom-fields
 BACKUP_CODE = 404            # what /v2/backup/jobs answers; tests set 500 to mimic a tenant without NinjaOne Backup
 
 
@@ -168,6 +169,8 @@ class H(BaseHTTPRequestHandler):
             return self._json(200, {"cursor": None, "results": rows})
         if u.path == "/v2/queries/software-patches":
             return self._json(200, {"cursor": None, "results": SW_PATCHES})
+        if u.path.startswith("/v2/device/") and u.path.endswith("/custom-fields"):
+            return self._json(200, CUSTOM_FIELDS.get(int(u.path.split("/")[3]), {}))
         if u.path == "/v2/queries/volumes":
             return self._json(200, {"cursor": None, "results": VOLUMES})
         return self._json(404, {"error": "not found"})

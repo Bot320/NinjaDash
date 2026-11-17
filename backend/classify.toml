@@ -36,7 +36,9 @@ offline_server_minutes = 15
 quarantine_hours       = 24      # quarantined threats stay visible this long
 backup_window_hours    = 24
 # NinjaOne's severity sets the colour. For these categories a "Warnung"/"warning" in the alert text
-# (as the last level word) can lower a red alert to yellow; text never makes an alert red. [] = off.
+# (as the last level word) can lower a red alert to yellow; text never makes an alert red. If the text has
+# no such word (e.g. "Veeam Backup & Replication prüfen"), the device's status custom field (veeamStatus =
+# "Warnung") decides the same way. [] = off.
 level_from_text        = ["backup", "hardware"]
 # Low storage panel: volumes at least this full (percent). Smaller volumes than storage_min_gb and
 # recovery / EFI / boot partitions are ignored.

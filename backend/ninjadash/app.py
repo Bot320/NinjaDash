@@ -15,7 +15,7 @@ from .demo import demo_summary
 from .history import History
 from .ninja import NinjaClient, NinjaError
 from .schedule import Schedule
-from .summary import Snapshot, build_summary
+from .summary import Snapshot, build_summary, first, needs_fields
 
 log = logging.getLogger("ninjadash")
 UNAVAILABLE_RETRY = 3600      # re-try optional endpoints that failed (403/404/500 ...) once an hour
@@ -208,6 +208,20 @@ class App:
             self._unavailable[name] = now + UNAVAILABLE_RETRY
             return None
 
+    def _fetch_custom_fields(self, now: float) -> None:
+        """Backup/hardware alerts without "Warnung"/"Fehler" in their text (e.g. "Veeam Backup & Replication
+        prüfen"): read the device's status custom field, which says warning or error. Cached for POLL_SLOW."""
+        want = {first(a, "deviceId", "nodeId") for a in self.snap.alerts if needs_fields(a, self.clf)} - {None}
+        cache = getattr(self, "_cf_cache", {})
+        fresh = {d: v for d, v in cache.items() if d in want and v[0] > now}
+        missing = [d for d in want if d not in fresh]
+        if missing:
+            got = self._optional("custom-fields", lambda: {d: self.client.device_custom_fields(d) for d in missing[:20]})
+            for d, fields in (got or {}).items():
+                fresh[d] = (now + self.cfg.poll_slow, fields)
+        self._cf_cache = fresh
+        self.snap.custom_fields = {d: v[1] for d, v in fresh.items()}
+
     def poll_once(self) -> None:
         now = time.time()
         c = self.client
@@ -225,6 +239,7 @@ class App:
             self.snap.sw_patches = self._optional("software-patches", lambda: c.query("/v2/queries/software-patches", attempts=n))
             self.snap.volumes = self._optional("volumes", lambda: c.query("/v2/queries/volumes", attempts=n))
             self._next_slow = now + self.cfg.poll_slow
+        self._fetch_custom_fields(now)
         summary = build_summary(self.snap, self.clf, self.history, time.time())
         with self._lock:
             self._summary = summary

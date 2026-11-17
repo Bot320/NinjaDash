@@ -11,7 +11,7 @@ from . import __version__
 from .classify import Classifier
 from .config import load_config
 from .ninja import NinjaClient, NinjaError
-from .summary import (alert_label, alert_severity, patch_reason, patch_state, Snapshot, build_summary,
+from .summary import (alert_parts, alert_severity, field_level, field_text, needs_fields, patch_reason, patch_state, Snapshot, build_summary,
                       device_name, first)
 
 
@@ -92,24 +92,37 @@ def cmd_alerts(args) -> int:
         _bad(str(e))
         return 1
     seen = collections.Counter()
+    fields_of: dict = {}
+    errors: dict = {}
     for a in alerts:
-        subject = first(a, "subject", default="") or ""
-        message = first(a, "message", default="") or ""
-        src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
-        conds = [str(x) for x in (a.get("sourceName"), a.get("conditionName"), a.get("sourceConfigName"), src.get("name"), subject) if x]
-        cat, rule = clf.category(conds, f"{subject} {message} {' '.join(conds)}")
+        subject, message, cat, rule, label = alert_parts(a, clf)
         if cat not in ("backup", "hardware"):
             continue
-        label = alert_label(a, subject, message)
-        sev, why = alert_severity(a, clf, cat, rule, label, subject, message)
-        key = (cat, label[:60], sev, why, str(message).replace("\n", " ")[:90])
+        fields, hint = None, ""
+        if needs_fields(a, clf):
+            dev = first(a, "deviceId", "nodeId")
+            if dev not in fields_of:
+                try:
+                    fields_of[dev] = c.device_custom_fields(dev)
+                except NinjaError as e:
+                    fields_of[dev] = None
+                    errors[dev] = f"custom fields not readable: {e}"
+            fields = fields_of[dev]
+            hint = errors.get(dev, "")
+            if fields is not None and not field_level(fields, label)[0]:
+                short_vals = [f"{k} = {field_text(v)}" for k, v in fields.items() if 0 < len(field_text(v)) <= 20]
+                hint = "short custom fields: " + ("; ".join(short_vals[:10]) or f"none ({len(fields)} fields)")
+        sev, why = alert_severity(a, clf, cat, rule, label, subject, message, fields)
+        key = (cat, label[:60], sev, why, str(message).replace("\n", " ")[:90], hint[:300])
         seen[key] += 1
     if not seen:
         _info("no backup or hardware alerts right now")
-    for (cat, label, sev, why, msg), n in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+    for (cat, label, sev, why, msg, hint), n in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         print(f"\n  {cat:8} {'RED' if sev == 'critical' else 'YELLOW' if sev in ('warning', 'minor') else sev}  ×{n}  {label}")
         _info(f"because: {why}")
         _info(f"message: {msg}")
+        if hint:
+            _info(hint)
     print("\nTake a photo of this screen and send it.")
     return 0
 

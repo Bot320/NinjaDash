@@ -170,6 +170,11 @@ class NinjaClient:
         data = self.get("/v2/alerts") or []
         return data if isinstance(data, list) else data.get("results", [])
 
+    def device_custom_fields(self, device_id, attempts: int = 2) -> dict:
+        """The device's custom field values, {name: value} (read-only GET)."""
+        data = self.get(f"/v2/device/{int(device_id)}/custom-fields", attempts=attempts) or {}
+        return data if isinstance(data, dict) else {}
+
     def backup_jobs(self, attempts: int = 4) -> list[dict]:
         data = self.get("/v2/backup/jobs", attempts=attempts) or []
         if isinstance(data, dict):
