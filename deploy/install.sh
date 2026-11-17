@@ -146,6 +146,13 @@ else
   HA_ON=0
 fi
 [[ $HA_ON == 1 ]] && open_port "$PORT"
+REDIRECT=$(sed -n 's/^HTTP_REDIRECT=//p' "$ETC/ninjadash.env" | tail -1 | cut -d' ' -f1)
+if ! grep -q '^HTTP_REDIRECT=' "$ETC/ninjadash.env"; then
+  printf '\n# When LISTEN is 0.0.0.0, port 80 forwards to the dashboard, so http://ninjadash.local works without :%s (empty = off)\nHTTP_REDIRECT=80\n' \
+    "$PORT" >> "$ETC/ninjadash.env"
+  REDIRECT=80
+fi
+[[ $HA_ON == 1 && -n $REDIRECT && $REDIRECT != 0 ]] && open_port "$REDIRECT"
 
 # ---- backend service ----------------------------------------------------------------
 say "Starting the dashboard service"

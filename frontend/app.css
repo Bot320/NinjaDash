@@ -27,7 +27,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; }
-html, body { height: 100%; overflow: hidden; cursor: none; }
+html, body { height: 100%; overflow: hidden; }
+html.kiosk, html.kiosk body { cursor: none; }    /* only on the TV (opened as 127.0.0.1) */
 body {
   font-family: var(--font); color: var(--text-1); -webkit-font-smoothing: antialiased;
   background:

@@ -19,6 +19,7 @@
 #   sudo ninjadash pointer          hide the mouse pointer on the TV now
 #   sudo ninjadash home-assistant   show the Home Assistant configuration incl. token
 #   sudo ninjadash diag             details about the kiosk screen (send this when something looks wrong)
+#   sudo ninjadash address [NAME]   reachable as http://NAME.local in the network (default: ninjadash)
 #   sudo ninjadash rdp-repair       Remote Desktop fails ("Error connecting to Xorg"): rebuild it for the current Xorg
 set -euo pipefail
 ENV=/etc/ninjadash/ninjadash.env
@@ -66,6 +67,42 @@ case "${1:-help}" in
     need_root check; shift
     exec runuser -u ninjadash -- env PYTHONPATH=/opt/ninjadash/backend NINJADASH_ENV="$ENV" \
       PYTHONDONTWRITEBYTECODE=1 python3 -m ninjadash check "$@" ;;
+  address)
+    need_root address
+    name=$(printf '%s' "${2:-ninjadash}" | tr '[:upper:]' '[:lower:]')
+    LC_ALL=C grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$' <<<"$name" \
+      || { echo "Use plain letters (no umlauts), digits and dashes, e.g. ninjadash"; exit 1; }
+    # mDNS: the PC answers "NAME.local" with its current address, so the link survives a new IP from the router.
+    if ! pacman -Q avahi &>/dev/null; then pacman -S --needed --noconfirm avahi >/dev/null || { echo "Installing avahi failed"; exit 1; }; fi
+    old=$(hostnamectl --static 2>/dev/null || hostname)
+    if [[ $old != "$name" ]]; then
+      hostnamectl set-hostname "$name"
+      echo "  Computer name: $old → $name (if you are in a Remote Desktop session, reconnect once)"
+    fi
+    systemctl enable avahi-daemon.service >/dev/null 2>&1 || true
+    systemctl restart avahi-daemon.service
+    if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+      ufw allow 5353/udp >/dev/null && echo "  Firewall (ufw): allowed mDNS (5353/udp)"
+    elif command -v firewall-cmd >/dev/null && systemctl is-active --quiet firewalld; then
+      firewall-cmd --permanent --add-service=mdns >/dev/null && firewall-cmd --reload >/dev/null && echo "  Firewall (firewalld): allowed mDNS"
+    fi
+    host=$(getenv LISTEN); host=${host%:*}
+    if [[ $host == 127.0.0.1 || $host == localhost ]]; then
+      echo "  Note: LISTEN=$(getenv LISTEN) only answers this PC. Set LISTEN=0.0.0.0:$(port) with: sudo ninjadash edit"
+    fi
+    [[ $(getenv REMOTE_ACCESS) == all ]] || echo "  Note: to see the dashboard from other PCs, set REMOTE_ACCESS=all with: sudo ninjadash edit"
+    redirect=$(getenv HTTP_REDIRECT); redirect=${redirect%% *}
+    if [[ -n $redirect && $redirect != 0 ]]; then
+      if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then ufw allow "$redirect/tcp" >/dev/null
+      elif command -v firewall-cmd >/dev/null && systemctl is-active --quiet firewalld; then
+        firewall-cmd --permanent --add-port="$redirect/tcp" >/dev/null && firewall-cmd --reload >/dev/null
+      fi
+      [[ $redirect == 80 ]] && suffix="" || suffix=":$redirect"
+      echo "Done. In the network: http://$name.local$suffix  (forwards to port $(port))"
+    else
+      echo "Done. In the network: http://$name.local:$(port)"
+    fi
+    echo "(The TV keeps using this PC directly; Home Assistant can keep the IP address or use $name.local too.)" ;;
   rdp-repair)
     need_root rdp-repair
     exec bash /opt/ninjadash/deploy/setup-rdp.sh --repair ;;
@@ -234,5 +271,5 @@ rest_command:
 EOF
     ;;
   *)
-    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

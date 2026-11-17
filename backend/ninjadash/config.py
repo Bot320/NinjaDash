@@ -79,6 +79,7 @@ class Config:
     demo: bool = False
     screen_token: str = ""
     remote_access: str = "screen"        # what other PCs on the network may use: none | screen | all
+    http_redirect_port: int = 80         # also answer on this port and forward to LISTEN's port (0 = off)
     hide_offline_days: float = 30        # devices offline longer than this: no warnings, no storage (0 = show all)
     schedule_values: dict = field(default_factory=dict)   # SCREEN_ON / SCREEN_OFF / SCREEN_DAYS / SCREEN_OFF_DATES
     frontend_dir: Path = DEFAULT_FRONTEND
@@ -103,7 +104,7 @@ def load_config() -> Config:
         if key.startswith("NINJA_") or key in {
             "POLL_FAST", "POLL_SLOW", "LISTEN", "HISTORY_DB", "THEME", "LIGHT_FROM", "LIGHT_UNTIL", "DEMO",
             "SCREEN_TOKEN", "REMOTE_ACCESS", "SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES",
-            "HIDE_OFFLINE_DAYS",
+            "HIDE_OFFLINE_DAYS", "HTTP_REDIRECT",
         }:
             values[key] = val
 
@@ -128,6 +129,7 @@ def load_config() -> Config:
         screen_token=values.get("SCREEN_TOKEN", "") or "",
         remote_access=(values.get("REMOTE_ACCESS", "screen") or "screen").lower(),
         hide_offline_days=_days(values.get("HIDE_OFFLINE_DAYS", "30")),
+        http_redirect_port=_port(values.get("HTTP_REDIRECT", "80")),
         schedule_values={k: values.get(k, "") for k in ("SCREEN_ON", "SCREEN_OFF", "SCREEN_DAYS", "SCREEN_OFF_DATES")},
     )
     frontend = os.environ.get("NINJADASH_FRONTEND")
@@ -137,6 +139,12 @@ def load_config() -> Config:
     cfg.rules = load_rules(cfg.rules_file)
     cfg.rules.setdefault("display", {})["hide_offline_days"] = cfg.hide_offline_days
     return cfg
+
+
+def _port(text: str) -> int:
+    """HTTP_REDIRECT: a port number; empty, 0, off or unreadable = no redirect."""
+    text = (text or "").strip().lower()
+    return int(text) if text.isdigit() and 0 < int(text) < 65536 else 0
 
 
 def _days(text: str) -> float:

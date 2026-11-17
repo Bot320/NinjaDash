@@ -42,3 +42,46 @@ class AppTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RedirectTest(unittest.TestCase):
+    def test_target(self):
+        from ninjadash.server import redirect_target
+        self.assertEqual(redirect_target("ninjadash.local", "x", 8080, "/"), "http://ninjadash.local:8080/")
+        self.assertEqual(redirect_target("ninjadash.local:80", "x", 8080, "/api/summary?a=1"),
+                         "http://ninjadash.local:8080/api/summary?a=1")
+        self.assertEqual(redirect_target("192.168.1.20", "x", 8080, "/"), "http://192.168.1.20:8080/")
+        self.assertEqual(redirect_target("[fe80::1]:80", "x", 8080, "/"), "http://[fe80::1]:8080/")
+        self.assertEqual(redirect_target(None, "localhost", 8080, "/"), "http://localhost:8080/")
+        self.assertEqual(redirect_target("ninjadash.local", "x", 8080, "//evil.example/"), "http://ninjadash.local:8080/")
+        self.assertIsNone(redirect_target("evil.example/x?", "x", 8080, "/"))
+        self.assertIsNone(redirect_target("a b", "x", 8080, "/"))
+
+    def test_port_80_forwards_to_the_dashboard(self):
+        import http.client
+        import socket
+        from ninjadash.server import start_redirect
+        self.assertIsNone(start_redirect("127.0.0.1", 8080, 80))        # dashboard only on this PC: no redirect
+        self.assertIsNone(start_redirect("0.0.0.0", 8080, 0))           # HTTP_REDIRECT empty: off
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            free = s.getsockname()[1]
+        srv = start_redirect("0.0.0.0", 8080, free)
+        self.assertIsNotNone(srv)
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", free, timeout=5)
+            c.request("GET", "/", headers={"Host": "ninjadash.local"})
+            r = c.getresponse()
+            self.assertEqual(r.status, 302)
+            self.assertEqual(r.getheader("Location"), "http://ninjadash.local:8080/")
+            c.close()
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_setting(self):
+        from ninjadash.config import _port
+        self.assertEqual(_port("80"), 80)
+        self.assertEqual(_port(""), 0)
+        self.assertEqual(_port("off"), 0)
+        self.assertEqual(_port("70000"), 0)

@@ -20,6 +20,10 @@ StateDirectory=ninjadash
 StateDirectoryMode=0750
 MemoryMax=300M
 
+# Only extra right: open port 80 for the redirect to the dashboard port (HTTP_REDIRECT).
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 # Read-only access to the system, no access to /home, no privilege changes.
 NoNewPrivileges=yes
 ProtectSystem=strict
