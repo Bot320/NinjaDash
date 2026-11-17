@@ -35,8 +35,8 @@ other_min_severity     = "critical"
 offline_server_minutes = 15
 quarantine_hours       = 24      # quarantined threats stay visible this long
 backup_window_hours    = 24
-# For these categories the word in the alert text sets the colour: "Warnung"/"warning" = yellow,
-# "Fehler"/"error"/"failed" = red (the last such word counts). [] = always use NinjaOne's severity.
+# NinjaOne's severity sets the colour. For these categories a "Warnung"/"warning" in the alert text
+# (as the last level word) can lower a red alert to yellow; text never makes an alert red. [] = off.
 level_from_text        = ["backup", "hardware"]
 # Low storage panel: volumes at least this full (percent). Smaller volumes than storage_min_gb and
 # recovery / EFI / boot partitions are ignored.

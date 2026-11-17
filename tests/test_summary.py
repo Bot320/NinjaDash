@@ -129,6 +129,23 @@ class ClassifierTest(unittest.TestCase):
         self.assertEqual(s["pillars"]["hardware"]["state"], "warning")
         self.assertEqual(s["pillars"]["backup"]["state"], "critical")
 
+    def test_ninjaone_warning_stays_yellow_even_with_fehler_in_the_name(self):
+        import copy
+        now = time.time()
+        msg = "Benutzerdefinierte Felder Bedingung wurde erfüllt: Vaeem Backup Fehler"
+        alerts = [{"uid": "m1", "deviceId": 1, "severity": "MODERATE", "createTime": now - 60, "subject": "", "message": msg},
+                  {"uid": "m2", "deviceId": 2, "severity": "MINOR", "createTime": now - 60, "subject": "", "message": msg},
+                  {"uid": "c1", "deviceId": 3, "severity": "CRITICAL", "createTime": now - 60, "subject": "", "message": msg}]
+        devs = copy.deepcopy(fake_ninja.DEVICES)
+        for d in devs:
+            d["offline"] = False
+        s = build_summary(Snapshot(orgs=fake_ninja.ORGS, devices=devs, alerts=alerts),
+                          Classifier(load_rules(DEFAULT_RULES)), None, now)
+        states = {srv["name"]: srv["state"] for srv in s["affected"]}
+        self.assertEqual(states["SRV-FS01"], "warning")       # NinjaOne MODERATE: text "Fehler" must not make it red
+        self.assertEqual(states["SRV-VEEAM"], "warning")      # MINOR shows as a warning too
+        self.assertEqual(states["SRV-SQL01"], "critical")     # NinjaOne CRITICAL + "Fehler": red
+
     def test_categories(self):
         cat = lambda text, cond="": self.clf.category([cond] if cond else [], text)[0]
         self.assertEqual(cat("Veeam job 'Daily' finished with Failed"), "backup")

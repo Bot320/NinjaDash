@@ -11,7 +11,8 @@ from . import __version__
 from .classify import Classifier
 from .config import load_config
 from .ninja import NinjaClient, NinjaError
-from .summary import patch_reason, patch_state, Snapshot, build_summary, device_name, first
+from .summary import (alert_label, alert_severity, patch_reason, patch_state, Snapshot, build_summary,
+                      device_name, first)
 
 
 def cmd_serve(args) -> int:
@@ -72,6 +73,43 @@ def cmd_patches(args) -> int:
             _info("  because: " + "; ".join(f"{w} ({n})" for w, n in why.most_common(3)))
             ex = {k: v for k, v in rs[0].items() if k not in ("deviceId", "nodeId")}
             _info("  e.g. " + "  ".join(f"{k}={str(v)[:38]}" for k, v in ex.items())[:400])
+    print("\nTake a photo of this screen and send it.")
+    return 0
+
+
+def cmd_alerts(args) -> int:
+    """Backup and hardware alerts: what NinjaOne sends and which colour the dashboard picks. One screen, no device names."""
+    cfg = load_config()
+    if not cfg.has_credentials:
+        _bad("NINJA_CLIENT_ID / NINJA_CLIENT_SECRET are empty.")
+        return 2
+    c = NinjaClient(cfg.api_base, cfg.client_id, cfg.client_secret, cfg.scope)
+    clf = Classifier(cfg.rules)
+    print(f"NinjaDash {__version__} · backup and hardware alerts (nothing is changed)")
+    try:
+        alerts = c.alerts()
+    except NinjaError as e:
+        _bad(str(e))
+        return 1
+    seen = collections.Counter()
+    for a in alerts:
+        subject = first(a, "subject", default="") or ""
+        message = first(a, "message", default="") or ""
+        src = a.get("sourceConfig") if isinstance(a.get("sourceConfig"), dict) else {}
+        conds = [str(x) for x in (a.get("sourceName"), a.get("conditionName"), a.get("sourceConfigName"), src.get("name"), subject) if x]
+        cat, rule = clf.category(conds, f"{subject} {message} {' '.join(conds)}")
+        if cat not in ("backup", "hardware"):
+            continue
+        label = alert_label(a, subject, message)
+        sev, why = alert_severity(a, clf, cat, rule, label, subject, message)
+        key = (cat, label[:60], sev, why, str(message).replace("\n", " ")[:90])
+        seen[key] += 1
+    if not seen:
+        _info("no backup or hardware alerts right now")
+    for (cat, label, sev, why, msg), n in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        print(f"\n  {cat:8} {'RED' if sev == 'critical' else 'YELLOW' if sev in ('warning', 'minor') else sev}  ×{n}  {label}")
+        _info(f"because: {why}")
+        _info(f"message: {msg}")
     print("\nTake a photo of this screen and send it.")
     return 0
 
@@ -207,12 +245,15 @@ def main(argv=None) -> int:
     p_serve.add_argument("--port", type=int, help="override the port from LISTEN")
     p_check = sub.add_parser("check", help="test the NinjaOne connection and show what the dashboard would see")
     p_check.add_argument("--fields", action="store_true", help="also print the field names NinjaOne returns")
+    sub.add_parser("alerts", help="show backup/hardware alerts and why they are red or yellow (for one photo)")
     sub.add_parser("patches", help="show the raw patch statuses and fields NinjaOne sends (for one photo)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if args.cmd == "check":
         return cmd_check(args)
+    if args.cmd == "alerts":
+        return cmd_alerts(args)
     if args.cmd == "patches":
         return cmd_patches(args)
     if args.cmd is None:
