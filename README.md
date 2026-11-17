@@ -94,7 +94,7 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `sudo ninjadash logs` | Follows the log live (Ctrl+C to stop) |
 | `sudo ninjadash restart` | Restarts the service and the kiosk, e.g. after editing settings or rules |
 | `sudo ninjadash edit` | Opens the settings file (`/etc/ninjadash/ninjadash.env`) in nano |
-| `sudo ninjadash alerts` | Backup and hardware alerts: what NinjaOne sends, the status custom field used, and why each one is red or yellow (one screen, for a photo) |
+| `sudo ninjadash alerts` | Backup and hardware alerts (what NinjaOne sends, the status custom field used, red or yellow) and antivirus that NinjaOne sees as off, with whether an "Antivirus Status = OK" custom field hides it (one screen, for a photo) |
 | `sudo ninjadash address [NAME]` | Makes the dashboard reachable as `http://ninjadash.local` in the network (renames the PC, mDNS; port 80 forwards to 8080) |
 | `sudo ninjadash rdp-repair` | Remote Desktop fails after an update: rebuilds xorgxrdp for the new Xorg, restarts RDP |
 | `sudo ninjadash check` | Tests the NinjaOne login and shows what each tile will show. Changes nothing in NinjaOne |

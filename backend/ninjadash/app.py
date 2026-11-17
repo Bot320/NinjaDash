@@ -15,7 +15,7 @@ from .demo import demo_summary
 from .history import History
 from .ninja import NinjaClient, NinjaError
 from .schedule import Schedule
-from .summary import Snapshot, build_summary, first, needs_fields
+from .summary import Snapshot, av_problem, av_products_by_device, build_summary, first, needs_fields
 
 log = logging.getLogger("ninjadash")
 UNAVAILABLE_RETRY = 3600      # re-try optional endpoints that failed (403/404/500 ...) once an hour
@@ -209,14 +209,17 @@ class App:
             return None
 
     def _fetch_custom_fields(self, now: float) -> None:
-        """Backup/hardware alerts without "Warnung"/"Fehler" in their text (e.g. "Veeam Backup & Replication
-        prüfen"): read the device's status custom field, which says warning or error. Cached for POLL_SLOW."""
-        want = {first(a, "deviceId", "nodeId") for a in self.snap.alerts if needs_fields(a, self.clf)} - {None}
+        """Read the custom fields of devices whose status NinjaOne alone can't tell: backup/hardware alerts without
+        "Warnung"/"Fehler" in their text (e.g. "Veeam Backup & Replication prüfen"), and devices NinjaOne sees with
+        antivirus off or out of date (a script's "Antivirus Status = OK" field wins). Cached for POLL_SLOW."""
+        want = {first(a, "deviceId", "nodeId") for a in self.snap.alerts if needs_fields(a, self.clf)}
+        want |= {d for d, products in av_products_by_device(self.snap).items() if av_problem(products)}   # see av_field_ok
+        want -= {None}
         cache = getattr(self, "_cf_cache", {})
         fresh = {d: v for d, v in cache.items() if d in want and v[0] > now}
         missing = [d for d in want if d not in fresh]
         if missing:
-            got = self._optional("custom-fields", lambda: {d: self.client.device_custom_fields(d) for d in missing[:20]})
+            got = self._optional("custom-fields", lambda: {d: self.client.device_custom_fields(d) for d in missing[:40]})
             for d, fields in (got or {}).items():
                 fresh[d] = (now + self.cfg.poll_slow, fields)
         self._cf_cache = fresh

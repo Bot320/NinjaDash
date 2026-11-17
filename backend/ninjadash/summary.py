@@ -215,6 +215,40 @@ def alert_issues(snap: Snapshot, clf: Classifier, devices: dict) -> list[Issue]:
     return out
 
 
+def av_problem(products: list[dict]) -> tuple[str, str] | None:
+    """("off", product) when no antivirus on the device is on, ("defs", "") when all definitions are old, else None."""
+    states = [str(first(p, "productState", "state", "status", default="")).upper() for p in products]
+    if states and not any(st in ("ON", "ENABLED", "RUNNING", "ACTIVE", "") for st in states):
+        return "off", str(first(products[0], "productName", "name", default="Antivirus"))
+    defs = [str(first(p, "definitionStatus", "definitionsStatus", "definitionState", default="")).upper() for p in products]
+    if defs and all(("OUT" in d or "EXPIRED" in d or "OLD" in d) for d in defs if d) and any(defs):
+        return "defs", ""
+    return None
+
+
+def av_products_by_device(snap: Snapshot) -> dict:
+    per_device: dict = {}
+    for s in snap.av_status or []:
+        per_device.setdefault(first(s, "deviceId", "nodeId"), []).append(s)
+    return per_device
+
+
+# NinjaOne only knows antivirus products registered in Windows Security Center. A server agent such as Trend Micro
+# often isn't, so NinjaOne sees just the (normally stopped) Defender. A script that checks the real product and
+# writes a custom field like "Antivirus Status = OK" knows better: that field wins over "disabled / out of date".
+AV_FIELD_NAME = re.compile(r"(?:anti[\s_-]*virus|virenschutz|virus)[\s_-]*(?:status|state|zustand)", re.IGNORECASE)
+AV_FIELD_OK = {"ok", "okay", "o.k.", "aktiv", "active", "running", "läuft", "enabled", "protected", "geschützt", "healthy", "gut"}
+
+
+def av_field_ok(fields: dict | None) -> str:
+    """'name = value' of an antivirus status custom field that says OK, else ''."""
+    for name, value in (fields or {}).items():
+        text = field_text(value).strip()
+        if AV_FIELD_NAME.search(str(name)) and text.lower().rstrip(".!") in AV_FIELD_OK:
+            return f"{name} = {text}"
+    return ""
+
+
 def antivirus_issues(snap: Snapshot, clf: Classifier, devices: dict, now: float) -> list[Issue]:
     out = []
     q_hours = float(clf.display.get("quarantine_hours", 24))
@@ -232,19 +266,15 @@ def antivirus_issues(snap: Snapshot, clf: Classifier, devices: dict, now: float)
         elif not any(r in status for r in resolved):
             out.append(Issue(dev_id, "antivirus", "critical", f"Active threat: {name}", when, f"threat:{dev_id}:{name}:{when}"))
 
-    per_device: dict = {}
-    for s in snap.av_status or []:
-        dev_id = first(s, "deviceId", "nodeId")
-        if dev_id in devices and devices[dev_id]["tier"]:
-            per_device.setdefault(dev_id, []).append(s)
-    for dev_id, products in per_device.items():
-        states = [str(first(p, "productState", "state", "status", default="")).upper() for p in products]
-        if states and not any(st in ("ON", "ENABLED", "RUNNING", "ACTIVE", "") for st in states):
-            prod = first(products[0], "productName", "name", default="Antivirus")
-            out.append(Issue(dev_id, "antivirus", "critical", f"Antivirus disabled ({short(prod, 40)})", None, f"avoff:{dev_id}"))
+    for dev_id, products in av_products_by_device(snap).items():
+        if dev_id not in devices or not devices[dev_id]["tier"]:
             continue
-        defs = [str(first(p, "definitionStatus", "definitionsStatus", "definitionState", default="")).upper() for p in products]
-        if defs and all(("OUT" in d or "EXPIRED" in d or "OLD" in d) for d in defs if d) and any(defs):
+        problem = av_problem(products)
+        if not problem or av_field_ok(snap.custom_fields.get(dev_id)):
+            continue
+        if problem[0] == "off":
+            out.append(Issue(dev_id, "antivirus", "critical", f"Antivirus disabled ({short(problem[1], 40)})", None, f"avoff:{dev_id}"))
+        else:
             out.append(Issue(dev_id, "antivirus", "warning", "Antivirus definitions out of date", None, f"avdefs:{dev_id}"))
     return out
 
