@@ -3,6 +3,10 @@
 (function () {
   "use strict";
   const REFRESH_MS = 30000;
+  // The TV's kiosk opens the dashboard on this PC itself (127.0.0.1); other devices in the network use its
+  // address or ninjadash.local. Only the kiosk hides the mouse pointer and keeps the screen awake.
+  const KIOSK = ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname);
+  document.documentElement.classList.toggle("kiosk", KIOSK);
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = n => Number(n || 0).toLocaleString("en-US");
@@ -422,7 +426,9 @@
       }
     } catch (e) { /* not supported or refused: nothing else to do */ }
   }
-  document.addEventListener("visibilitychange", keepAwake);
-  setInterval(keepAwake, 60000);
-  keepAwake();
+  if (KIOSK) {
+    document.addEventListener("visibilitychange", keepAwake);
+    setInterval(keepAwake, 60000);
+    keepAwake();
+  }
 })();

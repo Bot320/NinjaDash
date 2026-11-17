@@ -95,6 +95,7 @@ Everything goes through the `ninjadash` helper (installed to `/usr/local/bin`).
 | `sudo ninjadash restart` | Restarts the service and the kiosk, e.g. after editing settings or rules |
 | `sudo ninjadash edit` | Opens the settings file (`/etc/ninjadash/ninjadash.env`) in nano |
 | `sudo ninjadash alerts` | Backup and hardware alerts: what NinjaOne sends, the status custom field used, and why each one is red or yellow (one screen, for a photo) |
+| `sudo ninjadash address [NAME]` | Makes the dashboard reachable as `http://ninjadash.local:8080` in the network (renames the PC, mDNS) |
 | `sudo ninjadash rdp-repair` | Remote Desktop fails after an update: rebuilds xorgxrdp for the new Xorg, restarts RDP |
 | `sudo ninjadash check` | Tests the NinjaOne login and shows what each tile will show. Changes nothing in NinjaOne |
 | `sudo ninjadash check --fields` | The same, plus the field names NinjaOne returns (send this when something looks wrong) |
@@ -398,7 +399,7 @@ other_min_severity = "warning"       # also show "other" warnings on server card
 | `NINJA_CLIENT_ID`, `NINJA_CLIENT_SECRET` | empty | The API client. Empty = example data |
 | `POLL_FAST` / `POLL_SLOW` | `60` / `300` | Seconds between updates (alerts / antivirus + backup) |
 | `LISTEN` | `127.0.0.1:8080` | `0.0.0.0:8080` = reachable from the network (needed for Home Assistant) |
-| `REMOTE_ACCESS` | `screen` | What other PCs may use: `screen` (only the screen and theme switches, with token), `all` (also view the dashboard), `none` |
+| `REMOTE_ACCESS` | `screen` | What other PCs may use: `screen` (only the screen and theme switches, with token), `all` (also view the dashboard: open `http://ninjadash.local:8080` after `sudo ninjadash address`), `none`. Viewers can't switch the screen or theme without the token; the pointer is only hidden on the TV |
 | `SCREEN_TOKEN` | generated | Secret for the screen switch |
 | `THEME` | `auto` | Starting value: `dark`, `light` or `auto` (light between `LIGHT_FROM` and `LIGHT_UNTIL`). A choice made in Home Assistant or with `ninjadash theme` takes over |
 | `LIGHT_FROM` / `LIGHT_UNTIL` | `07:00` / `19:00` | Light-theme hours for `auto` |
